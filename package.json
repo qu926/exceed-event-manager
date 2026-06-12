@@ -1,0 +1,19 @@
+{
+  "name": "exceed-event-manager",
+  "version": "1.0.0",
+  "private": true,
+  "homepage": "https://qu926.github.io/exceed-event-manager/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/qu926/exceed-event-manager.git"
+  },
+  "type": "module",
+  "scripts": {
+    "start": "node server.cjs",
+    "check": "node --check js/config.js && node --check js/core.js && node --check js/app.js && node --check server.cjs && node --check tests/server.test.cjs && node --check tests/deployment.test.cjs",
+    "test": "npm run check && npm run test:deployment && npm run test:core && npm run test:server",
+    "test:deployment": "node --test tests/deployment.test.cjs",
+    "test:core": "node tests/core.test.mjs",
+    "test:server": "node --test tests/server.test.cjs"
+  }
+}
