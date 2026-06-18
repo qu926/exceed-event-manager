@@ -77,10 +77,10 @@ window.EVENT_MANAGER_CONFIG = {
     },
   ],
 
-  // 安全な既定値として、このブラウザ内だけに保存します。
-  storageMode: "local",
-  supabaseUrl: "PASTE_SUPABASE_PROJECT_URL_HERE",
-  supabaseAnonKey: "PASTE_SUPABASE_ANON_PUBLIC_KEY_HERE",
+  // Supabaseの共有DBへ同期します。
+  storageMode: "supabase",
+  supabaseUrl: "https://cdnbkbryksrhioajgorg.supabase.co",
+  supabaseAnonKey: "sb_publishable_d-ydLZw9k8vNPpDnu_QDGA_ACjkGL_i",
   // Supabaseを使う場合は、イベントごとに重複しない行IDへ変更してください。
   stateRowId: "exceed-event-manager",
 

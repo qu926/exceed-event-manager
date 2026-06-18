@@ -83,6 +83,9 @@ test("window config contains the EXCEED deployment identifiers and branding", as
   assert.ok(config && typeof config === "object");
   assert.equal(config.appId, slug);
   assert.equal(config.stateRowId, slug);
+  assert.equal(config.storageMode, "supabase");
+  assert.equal(config.supabaseUrl, "https://cdnbkbryksrhioajgorg.supabase.co");
+  assert.match(config.supabaseAnonKey, /^sb_publishable_/);
   assert.equal(config.producerName, ".EXE PRODUCE");
   assert.equal(config.producerLogoPath, "./assets/exe-produce-logo.png");
   assert.equal(config.brandName, "EXCEED");

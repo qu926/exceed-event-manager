@@ -67,17 +67,17 @@ https://qu926.github.io/exceed-event-manager/
 
 ## データ保存
 
-既定の `storageMode: "local"` では `localStorage` に保存します。端末やブラウザをまたいで共有する場合は Supabase を設定します。
+現在の `storageMode: "supabase"` では Supabase の `app_state` に同期します。端末やブラウザをまたいで同じ状態を共有できます。
 
 1. Supabase でプロジェクトを作成します。
 2. `supabase/schema.sql` 内の3つの ID が、`js/config.js` の `stores[].stateRowId` と一致していることを確認します。
 3. SQL Editor でスキーマを実行します。
-4. `js/config.js` の `storageMode` を `"supabase"` に変更し、Project URL と publishable key または anon public key を設定します。
+4. `js/config.js` の `storageMode` が `"supabase"` で、Project URL と publishable key または anon public key が設定されていることを確認します。
 
 ```js
 storageMode: "supabase",
-supabaseUrl: "https://xxxxx.supabase.co",
-supabaseAnonKey: "sb_publishable_xxxxx",
+supabaseUrl: "https://cdnbkbryksrhioajgorg.supabase.co",
+supabaseAnonKey: "sb_publishable_d-ydLZw9k8vNPpDnu_QDGA_ACjkGL_i",
 stores: [
   { key: "exceed", stateRowId: "exceed-event-manager" },
   { key: "syndicate", stateRowId: "syndicate-event-manager" },
