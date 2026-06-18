@@ -3,11 +3,14 @@ window.EVENT_MANAGER_CONFIG = {
   appId: "exceed-event-manager",
 
   // EXCEEDのブランド設定です。
+  producerName: ".EXE PRODUCE",
+  producerLogoPath: "./assets/exe-produce-logo.png",
   brandName: "EXCEED",
   title: "EXCEED 勤怠・予約管理",
   eyebrow: "EXCEED Event Manager",
-  logoPath: "./assets/exceed-logo.svg",
+  logoPath: "./assets/exceed-logo.png",
   logoAlt: "EXCEED ロゴ",
+  groupStores: ["EXCEED", "SYNDICATE", "THE CENTRAL"],
 
   // 安全な既定値として、このブラウザ内だけに保存します。
   storageMode: "local",
@@ -20,11 +23,14 @@ window.EVENT_MANAGER_CONFIG = {
   core: {
     sitePassword: "exceed",
     adminPassword: "exceed2026",
-    // 0=日曜日 ... 6=土曜日
-    eventWeekdays: [5, 6],
+    // 0=日曜日 ... 4=木曜日
+    eventWeekdays: [4],
     reservationOpenWeekday: 3,
     reservationOpenTime: "22:00",
-    firstWeekHolidayCandidates: true,
+    firstWeekHolidayCandidates: false,
+    grandOpenDate: "2026-07-02",
+    preOpenEventNote: "グランドオープン前の練習会",
+    grandOpenEventNote: "グランドオープン",
     initialRoles: ["幹部", "ホスト", "体入"],
     initialUsers: [
       {

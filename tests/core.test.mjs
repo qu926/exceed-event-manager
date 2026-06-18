@@ -280,8 +280,8 @@ test('finished events are automatically archived and reservation sections prefer
   assert.ok(getActiveEvents(archived.state, new Date('2026-05-09T00:00:00+09:00')).some((event) => event.id === futureEvent.id));
 
   assert.deepEqual(RESERVATION_SEAT_ORDER, [SEAT_TYPES[1], SEAT_TYPES[0]]);
-  assert.equal(TIME_SLOT_LABELS[TIME_SLOTS[0]], 'ワンタイム（前半） 21:50~');
-  assert.equal(TIME_SLOT_LABELS[TIME_SLOTS[1]], 'ツータイム（後半） 22:40~');
+  assert.equal(TIME_SLOT_LABELS[TIME_SLOTS[0]], '1タイム 22:00~');
+  assert.equal(TIME_SLOT_LABELS[TIME_SLOTS[1]], '2タイム 23:00~');
 });
 
 test('attendance upsert is immutable and summary tracks missing, present, absent, undecided, and vacation users', () => {
@@ -758,7 +758,7 @@ test('reservation request prototype supports seat capacities, host limits, and m
     { admin: true, now: '2026-05-03T13:01:00.000Z' },
   );
   assert.equal(duplicateSameHostSlot.ok, false);
-  assert.equal(duplicateSameHostSlot.errors.includes('同じ担当は前半1枠、後半1枠までです。'), true);
+  assert.equal(duplicateSameHostSlot.errors.includes('同じ担当は1タイム1枠、2タイム1枠までです。'), true);
 
   state = buildDefaultState(new Date(2026, 4, 15, 12));
   hosts = ensureActiveHosts(state, 30);

@@ -136,10 +136,16 @@ const APP_TITLE = String(APP_CONFIG.title);
 const APP_EYEBROW = String(APP_CONFIG.eyebrow || BRAND_NAME);
 const LOGO_PATH = String(APP_CONFIG.logoPath || "").trim();
 const LOGO_ALT = String(APP_CONFIG.logoAlt || `${BRAND_NAME} ロゴ`);
+const PRODUCER_NAME = String(APP_CONFIG.producerName || "").trim();
+const PRODUCER_LOGO_PATH = String(APP_CONFIG.producerLogoPath || "").trim();
+const GROUP_STORES = Array.isArray(APP_CONFIG.groupStores)
+  ? APP_CONFIG.groupStores.map((store) => String(store || "").trim()).filter(Boolean)
+  : [];
 const STATE_ROW_ID = String(APP_CONFIG.stateRowId || APP_ID);
 
 configureCore(APP_CONFIG.core);
 document.title = APP_TITLE;
+document.body.dataset.brand = APP_ID;
 
 const root = document.querySelector("#app");
 const toastRoot = document.querySelector("#toast");
@@ -227,14 +233,14 @@ function migrateState(saved) {
   return {
     ...fresh,
     ...saved,
-    event_dates: migrateEventDates(saved.event_dates || fresh.event_dates),
+    event_dates: migrateEventDates(saved.event_dates || [], fresh.event_dates),
     reservations: migrateReservations(saved.reservations || [], saved.event_dates || fresh.event_dates),
     drink_plans: migrateDrinkPlans(saved.drink_plans || []),
     roles: saved.roles || fresh.roles,
     staff_members: saved.staff_members || [],
     staff_attendance_entries: saved.staff_attendance_entries || [],
     reservation_settings: saved.reservation_settings || [],
-    reservation_requests: saved.reservation_requests || [],
+    reservation_requests: migrateReservationRequests(saved.reservation_requests || []),
     settings: { ...fresh.settings, ...(saved.settings || {}) },
     meta: { ...fresh.meta, ...(saved.meta || {}) },
   };
@@ -251,6 +257,7 @@ function migrateReservations(reservations, events) {
       updated_at: reservation.updated_at || reservation.created_at || stamp,
       deleted_at: reservation.deleted_at || null,
       is_deleted: Boolean(reservation.is_deleted),
+      time_slot: migrateTimeSlot(reservation.time_slot),
       attribute: RESERVATION_ATTRIBUTE,
       ivan_attribute: IVAN_ATTRIBUTES.includes(reservation.ivan_attribute) ? reservation.ivan_attribute : IVAN_ATTRIBUTE,
     };
@@ -261,8 +268,22 @@ function migrateReservations(reservations, events) {
   });
 }
 
-function migrateEventDates(events) {
-  return events.map((event) => {
+function migrateReservationRequests(requests) {
+  return requests.map((request) => ({
+    ...request,
+    desired_time_slot: migrateTimeSlot(request.desired_time_slot),
+  }));
+}
+
+function migrateEventDates(events, generatedEvents = []) {
+  const merged = new Map();
+  for (const event of generatedEvents) {
+    if (event?.id || event?.event_date) merged.set(event.id || event.event_date, { ...event });
+  }
+  for (const event of events) {
+    if (event?.id || event?.event_date) merged.set(event.id || event.event_date, { ...event });
+  }
+  return [...merged.values()].map((event) => {
     if (!event.event_date) return event;
     const autoOpenAt = getReservationOpenAt(event.event_date);
     const legacyOpenAt = getLegacyReservationOpenAt(event.event_date);
@@ -272,7 +293,13 @@ function migrateEventDates(events) {
       ...event,
       reservation_open_at: shouldUpdateOpenAt ? autoOpenAt : event.reservation_open_at,
     };
-  });
+  }).sort((a, b) => String(a.event_date || "").localeCompare(String(b.event_date || "")));
+}
+
+function migrateTimeSlot(value) {
+  if (value === "前半") return TIME_SLOTS[0];
+  if (value === "後半") return TIME_SLOTS[1];
+  return value;
 }
 
 function getLegacyReservationOpenAt(eventDate) {
@@ -296,6 +323,7 @@ function migrateDrinkPlans(plans) {
   return plans.map((plan) => ({
     ...plan,
     id: plan.id || createId("plan"),
+    time_slot: migrateTimeSlot(plan.time_slot),
     created_at: plan.created_at || stamp,
     updated_at: plan.updated_at || plan.created_at || stamp,
     deleted_at: plan.deleted_at || null,
@@ -535,6 +563,19 @@ function getDefaultEventId() {
   return open?.id || activeEvents.find((event) => event.status !== "休み")?.id || activeEvents[0]?.id || "";
 }
 
+function getNextConfiguredEventDate(baseDate = new Date()) {
+  const configuredWeekdays = Array.isArray(APP_CONFIG.core?.eventWeekdays)
+    ? APP_CONFIG.core.eventWeekdays.filter((day) => Number.isInteger(day) && day >= 0 && day <= 6)
+    : [];
+  const weekdays = configuredWeekdays.length ? configuredWeekdays : [baseDate.getDay()];
+  for (let offset = 1; offset <= 60; offset += 1) {
+    const candidate = new Date(baseDate);
+    candidate.setDate(candidate.getDate() + offset);
+    if (weekdays.includes(candidate.getDay())) return toLocalDateTimeString(candidate).slice(0, 10);
+  }
+  return toLocalDateTimeString(baseDate).slice(0, 10);
+}
+
 function getDefaultArchiveEventId() {
   const archived = getArchivedEvents(state).sort((a, b) => b.event_date.localeCompare(a.event_date));
   return archived[0]?.id || "";
@@ -599,10 +640,15 @@ function render() {
     <div class="app-shell">
       <header class="app-header">
         <div class="brand-lockup" aria-label="${escapeAttr(`${BRAND_NAME} ${APP_TITLE}`)}">
-          ${LOGO_PATH ? `<img class="brand-mark" src="${escapeAttr(LOGO_PATH)}" alt="${escapeAttr(LOGO_ALT)}">` : ""}
-          <div>
-            <p class="eyebrow">${escapeHtml(APP_EYEBROW)}</p>
-            <h1>${escapeHtml(APP_TITLE)}</h1>
+          <div class="brand-logo-stack">
+            ${PRODUCER_LOGO_PATH ? `<img class="producer-mark" src="${escapeAttr(PRODUCER_LOGO_PATH)}" alt="${escapeAttr(PRODUCER_NAME || ".EXE PRODUCE")}">` : ""}
+            ${LOGO_PATH ? `<img class="brand-mark" src="${escapeAttr(LOGO_PATH)}" alt="${escapeAttr(LOGO_ALT)}">` : ""}
+          </div>
+          <div class="brand-copy">
+            <p class="eyebrow">${escapeHtml(PRODUCER_NAME || APP_EYEBROW)}</p>
+            <h1>${escapeHtml(BRAND_NAME)}</h1>
+            <p class="brand-subtitle">${escapeHtml(APP_TITLE.replace(BRAND_NAME, "").trim() || APP_EYEBROW)}</p>
+            ${renderGroupStores()}
           </div>
         </div>
         <nav class="top-nav" aria-label="主要画面">
@@ -625,6 +671,11 @@ function renderSiteLogin() {
   return `
     <div class="app-shell">
       <section class="panel login-panel">
+        <div class="login-brand">
+          ${PRODUCER_LOGO_PATH ? `<img class="producer-mark login-producer-mark" src="${escapeAttr(PRODUCER_LOGO_PATH)}" alt="${escapeAttr(PRODUCER_NAME || ".EXE PRODUCE")}">` : ""}
+          ${LOGO_PATH ? `<img class="brand-mark login-brand-mark" src="${escapeAttr(LOGO_PATH)}" alt="${escapeAttr(LOGO_ALT)}">` : ""}
+          ${renderGroupStores()}
+        </div>
         <div class="panel-heading">
           <div>
             <p class="eyebrow">Password</p>
@@ -640,6 +691,15 @@ function renderSiteLogin() {
         </form>
         <p class="login-note">運営パスワードでもログインできます。その場合は運営画面も同時に解放されます。</p>
       </section>
+    </div>
+  `;
+}
+
+function renderGroupStores() {
+  if (!GROUP_STORES.length) return "";
+  return `
+    <div class="brand-family" aria-label="EXE PRODUCE stores">
+      ${GROUP_STORES.map((store) => `<span class="${store === BRAND_NAME ? "is-current" : ""}">${escapeHtml(store)}</span>`).join("")}
     </div>
   `;
 }
@@ -1027,11 +1087,11 @@ function renderReservationRequestSettingForm(eventId, setting) {
         </label>
         <div class="request-setting-capacities">
           <label>
-            <span>前半 通常席MAX</span>
+            <span>${escapeHtml(TIME_SLOTS[0])} 通常席MAX</span>
             <input name="normal_capacity_front" type="number" min="0" max="99" step="1" value="${setting.instance_count === 2 ? setting.normal_capacity_front : 16}">
           </label>
           <label>
-            <span>後半 通常席MAX</span>
+            <span>${escapeHtml(TIME_SLOTS[1])} 通常席MAX</span>
             <input name="normal_capacity_back" type="number" min="0" max="99" step="1" value="${setting.instance_count === 2 ? setting.normal_capacity_back : 16}">
           </label>
           <label>
@@ -1104,7 +1164,7 @@ function renderReservationRequestSummaryV2(buckets, setting, acceptance) {
       <div class="mini-panel">
         <span>保留枠合計</span>
         <strong>${acceptance.holdUsed} / ${acceptance.holdCapacity}</strong>
-        <em>前半3 / 後半3</em>
+        <em>${TIME_SLOTS.map((slot) => `${slot}3`).join(" / ")}</em>
         <span class="capacity ${acceptance.holdUsed >= acceptance.holdCapacity ? "full" : "ok"}">${acceptance.holdUsed >= acceptance.holdCapacity ? "満枠" : `残り${acceptance.holdCapacity - acceptance.holdUsed}`}</span>
       </div>
       ${TIME_SLOTS.map((slot) => {
@@ -1272,14 +1332,14 @@ function getFlexibleRequestHint(request) {
     if (candidates.length === 1) return `実質${REQUEST_TIME_SLOT_LABELS[candidates[0]]}`;
     if (!candidates.length) return "同タイム重複注意";
     const flexibleSiblings = siblingRequests.filter((item) => item.desired_time_slot === "どちらでも可" && item.no_same_time_double_booking);
-    if (flexibleSiblings.length) return "前後半に分けて調整";
+    if (flexibleSiblings.length) return "1タイム/2タイムに分けて調整";
   }
   return "";
 }
 
 function renderRequestPlacementActions(request) {
   if (request.desired_time_slot === "どちらでも可") {
-    return `<p class="request-note">前半・後半への振分は本実装時に対応します。</p>`;
+    return `<p class="request-note">1タイム・2タイムへの振分は本実装時に対応します。</p>`;
   }
   return `
     <div class="request-actions">
@@ -2015,9 +2075,7 @@ function renderEventManagement() {
   const editing = view.editingEventId ? findEvent(state, view.editingEventId) : null;
   const activeEvents = state.event_dates.filter((event) => !isEventArchived(event));
   const archivedCount = getArchivedEvents(state).length;
-  const defaultDate = new Date();
-  defaultDate.setDate(defaultDate.getDate() + 7);
-  const newDate = toLocalDateTimeString(defaultDate).slice(0, 10);
+  const newDate = getNextConfiguredEventDate();
   const eventDate = editing?.event_date || newDate;
   return `
     <section class="panel page-panel">
@@ -2394,6 +2452,7 @@ function renderDataTools() {
       <div class="panel-heading">
         <div><p class="eyebrow">Data</p><h2>データ管理</h2></div>
       </div>
+      ${renderSyncTools()}
       <div class="split">
         <div class="mini-panel">
           <h3>バックアップ</h3>
@@ -2408,6 +2467,31 @@ function renderDataTools() {
       </div>
       <textarea class="copy-text" data-copy-source="export" rows="12" readonly></textarea>
     </section>
+  `;
+}
+
+function renderSyncTools() {
+  const storageMode = getStorageMode();
+  const requestedMode = String(APP_CONFIG.storageMode || "local");
+  const urlReady = !isPlaceholder(APP_CONFIG.supabaseUrl);
+  const keyReady = !isPlaceholder(APP_CONFIG.supabaseAnonKey);
+  const canSync = storageMode === "supabase";
+  const statusLabel = canSync ? "共有DB有効" : requestedMode === "supabase" ? "Supabase設定不足" : "ローカル保存";
+  return `
+    <div class="sync-card">
+      <div>
+        <p class="eyebrow">Database Sync</p>
+        <h3>${escapeHtml(statusLabel)}</h3>
+        <p>現在: ${escapeHtml(syncStatus.text)} / Row ID: <code>${escapeHtml(STATE_ROW_ID)}</code></p>
+      </div>
+      <div class="sync-meta">
+        <span class="${requestedMode === "supabase" ? "is-ready" : ""}">mode: ${escapeHtml(requestedMode)}</span>
+        <span class="${urlReady ? "is-ready" : ""}">URL ${urlReady ? "設定済み" : "未設定"}</span>
+        <span class="${keyReady ? "is-ready" : ""}">key ${keyReady ? "設定済み" : "未設定"}</span>
+      </div>
+      <button class="primary-button" data-action="sync-shared-state" type="button" ${canSync ? "" : "disabled"}>共有DBと再同期</button>
+      ${canSync ? "" : `<p class="plan-note">Supabaseを使う場合は <code>js/config.js</code> の <code>storageMode</code>、<code>supabaseUrl</code>、<code>supabaseAnonKey</code> を設定してください。</p>`}
+    </div>
   `;
 }
 
@@ -2782,6 +2866,7 @@ function handleClick(event) {
   if (action === "copy-text") copyText(button.dataset.source);
   if (action === "export-json") exportJson();
   if (action === "reset-data") resetData();
+  if (action === "sync-shared-state") syncSharedStateNow();
 }
 
 function disableUserFromButton(button) {
@@ -3251,6 +3336,34 @@ function resetData() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   view.eventId = getDefaultEventId();
   showToast("初期データに戻しました。");
+  render();
+}
+
+async function syncSharedStateNow() {
+  if (getStorageMode() !== "supabase") {
+    syncStatus = getInitialSyncStatus();
+    showToast("Supabase URL/key が未設定です。", "error");
+    render();
+    return;
+  }
+  syncStatus = { mode: "supabase", text: "共有DBと再同期中" };
+  render();
+  try {
+    const localState = state;
+    const record = await loadSharedRecord();
+    const remoteState = record.state ? migrateState(record.state) : null;
+    const mergedState = remoteState ? mergeSharedState(remoteState, localState) : localState;
+    state = mergedState;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    await saveSharedStateWithRetry(state, record.updatedAt);
+    localStorage.removeItem(PENDING_LOCAL_CHANGES_KEY);
+    syncStatus = { mode: "supabase", text: "共有DBと同期済み" };
+    showToast("共有DBと再同期しました。");
+  } catch (error) {
+    console.error(error);
+    syncStatus = { mode: "error", text: shortSyncError(error, "共有DBとの再同期に失敗") };
+    showToast("共有DBとの再同期に失敗しました。", "error");
+  }
   render();
 }
 

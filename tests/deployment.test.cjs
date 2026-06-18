@@ -7,7 +7,7 @@ const { test } = require("node:test");
 const root = path.resolve(__dirname, "..");
 const slug = "exceed-event-manager";
 const title = "EXCEED 勤怠・予約管理";
-const logoPath = "./assets/exceed-logo.svg";
+const logoPath = "./assets/exceed-logo.png";
 const homepage = "https://qu926.github.io/exceed-event-manager/";
 const repositoryUrl = "https://github.com/qu926/exceed-event-manager.git";
 const textExtensions = new Set([
@@ -82,13 +82,21 @@ test("window config contains the EXCEED deployment identifiers and branding", as
   assert.ok(config && typeof config === "object");
   assert.equal(config.appId, slug);
   assert.equal(config.stateRowId, slug);
+  assert.equal(config.producerName, ".EXE PRODUCE");
+  assert.equal(config.producerLogoPath, "./assets/exe-produce-logo.png");
   assert.equal(config.brandName, "EXCEED");
   assert.equal(config.title, title);
   assert.equal(config.eyebrow, "EXCEED Event Manager");
   assert.equal(config.logoPath, logoPath);
   assert.equal(config.logoAlt, "EXCEED ロゴ");
+  assert.deepEqual([...config.groupStores], ["EXCEED", "SYNDICATE", "THE CENTRAL"]);
   assert.equal(config.core.sitePassword, "exceed");
   assert.equal(config.core.adminPassword, "exceed2026");
+  assert.deepEqual([...config.core.eventWeekdays], [4]);
+  assert.equal(config.core.firstWeekHolidayCandidates, false);
+  assert.equal(config.core.grandOpenDate, "2026-07-02");
+  assert.equal(config.core.preOpenEventNote, "グランドオープン前の練習会");
+  assert.equal(config.core.grandOpenEventNote, "グランドオープン");
 });
 
 test("Supabase schema consistently uses the EXCEED state row ID", async () => {
@@ -115,7 +123,7 @@ test("index metadata uses the EXCEED title and logo", async () => {
   assert.match(html, /<meta\b(?=[^>]*\bproperty=["']og:url["'])(?=[^>]*\bcontent=["']https:\/\/qu926\.github\.io\/exceed-event-manager\/["'])[^>]*>/);
   assert.match(
     html,
-    /<link\b(?=[^>]*\brel=["']icon["'])(?=[^>]*\bhref=["']\.\/assets\/exceed-logo\.svg["'])[^>]*>/,
+    /<link\b(?=[^>]*\brel=["']icon["'])(?=[^>]*\bhref=["']\.\/assets\/exceed-logo\.png["'])[^>]*>/,
   );
 });
 

@@ -1,6 +1,6 @@
 # EXCEED 勤怠・予約管理
 
-EXCEEDのイベントスタッフ向けに、勤怠、未入力者、長期休暇、開催日、予約枠、ドリンク上限を管理する静的SPAです。
+`.EXE PRODUCE` の `EXCEED` 向けに、勤怠、未入力者、長期休暇、営業日、予約枠、ドリンク上限を管理する静的SPAです。
 
 このテンプレートには、実運用のメンバー、パスワード、Supabase 接続情報、保存データを含めていません。
 
@@ -29,18 +29,29 @@ npm.cmd run check
 主要設定は `js/config.js` に集約しています。
 
 - `appId`: イベントごとに一意な英数字とハイフン。ブラウザ保存領域の識別子にも使われます。
-- `brandName`: ヘッダーに表示するイベント名。
+- `producerName` / `producerLogoPath`: .EXE PRODUCE の運営ブランド表示。
+- `brandName`: ヘッダーに表示する店舗名。
 - `title`: ブラウザタイトルと画面見出し。
 - `eyebrow`: ロゴ横の小見出し。
-- `logoPath` / `logoAlt`: イベントロゴのパスと代替テキスト。EXCEEDロゴは `logoPath: "./assets/exceed-logo.svg"` です。
+- `logoPath` / `logoAlt`: 店舗ロゴのパスと代替テキスト。EXCEEDロゴは `logoPath: "./assets/exceed-logo.png"` です。
+- `groupStores`: 今後展開予定の系列店舗。現在は `EXCEED`、`SYNDICATE`、`THE CENTRAL` を表示します。
 - `storageMode`: `"local"` または `"supabase"`。
 - `supabaseUrl` / `supabaseAnonKey` / `stateRowId`: Supabase の接続設定と保存行 ID。
 - `core.sitePassword` / `core.adminPassword`: 簡易ロック用パスワード。公開前に必ず変更します。
 - `core.initialUsers`: 初回起動時に登録するメンバー。不要なサンプルは削除します。
 - `core.initialRoles`: 初期ロール。
-- `core.eventWeekdays`: 開催曜日。JavaScript の曜日番号で、日曜が `0`、土曜が `6`。
+- `core.eventWeekdays`: 営業曜日。JavaScript の曜日番号で、木曜は `4`。
 - `core.reservationOpenWeekday` / `core.reservationOpenTime`: 予約解放曜日と時刻。
 - `core.firstWeekHolidayCandidates`: 各月の最初の開催日を休み候補にするか。
+- `core.grandOpenDate`: グランドオープン日。EXCEED は `2026-07-02`。
+- `core.preOpenEventNote` / `core.grandOpenEventNote`: グランドオープン前後の日程メモ。
+
+EXCEEDの営業条件は次の通りです。
+
+- グランドオープン: 2026-07-02
+- それ以前の木曜営業日は練習会として初期生成します。
+- 営業日: 毎週木曜
+- 予約枠: `1タイム 22:00~`、`2タイム 23:00~`
 
 現在の保存IDは `exceed-event-manager` です。別イベントへ複製するときは `appId` と `stateRowId` を必ず変更してください。
 

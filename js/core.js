@@ -6,25 +6,25 @@ export const ATTRIBUTES = ["初回", "リピ", "初回指名", "要確認"];
 export const RESERVATION_ATTRIBUTE = "リピ";
 export const IVAN_ATTRIBUTE = "初回";
 export const IVAN_ATTRIBUTES = ["リピ", "初回"];
-export const TIME_SLOTS = ["前半", "後半"];
-export const REQUEST_TIME_SLOTS = ["前半", "後半", "どちらでも可"];
+export const TIME_SLOTS = ["1タイム", "2タイム"];
+export const REQUEST_TIME_SLOTS = ["1タイム", "2タイム", "どちらでも可"];
 export const REQUEST_TIME_SLOT_LABELS = {
-  [TIME_SLOTS[0]]: "前半希望",
-  [TIME_SLOTS[1]]: "後半希望",
+  [TIME_SLOTS[0]]: "1タイム希望",
+  [TIME_SLOTS[1]]: "2タイム希望",
   "どちらでも可": "どちらでも可",
 };
 export const SEAT_TYPES = ["通常席", "アイバン席"];
 export const RESERVATION_SEAT_ORDER = [SEAT_TYPES[1], SEAT_TYPES[0]];
 export const TIME_SLOT_LABELS = {
-  [TIME_SLOTS[0]]: "ワンタイム（前半） 21:50~",
-  [TIME_SLOTS[1]]: "ツータイム（後半） 22:40~",
+  [TIME_SLOTS[0]]: "1タイム 22:00~",
+  [TIME_SLOTS[1]]: "2タイム 23:00~",
 };
 
 export const SLOT_LIMITS = {
-  "前半:通常席": 8,
-  "後半:通常席": 8,
-  "前半:アイバン席": 2,
-  "後半:アイバン席": 2,
+  "1タイム:通常席": 8,
+  "2タイム:通常席": 8,
+  "1タイム:アイバン席": 2,
+  "2タイム:アイバン席": 2,
 };
 
 export const DRINK_LIMITS = {
@@ -57,6 +57,9 @@ const DEFAULT_CORE_OPTIONS = {
   reservationOpenWeekday: 3,
   reservationOpenTime: "22:00",
   firstWeekHolidayCandidates: true,
+  grandOpenDate: "",
+  preOpenEventNote: "",
+  grandOpenEventNote: "",
   initialUsers: DEFAULT_INITIAL_USERS,
   initialRoles: DEFAULT_INITIAL_ROLES,
 };
@@ -82,6 +85,9 @@ function normalizeCoreOptions(options = {}) {
       typeof source.firstWeekHolidayCandidates === "boolean"
         ? source.firstWeekHolidayCandidates
         : DEFAULT_CORE_OPTIONS.firstWeekHolidayCandidates,
+    grandOpenDate: normalizeDateString(source.grandOpenDate),
+    preOpenEventNote: stringOption(source.preOpenEventNote, DEFAULT_CORE_OPTIONS.preOpenEventNote),
+    grandOpenEventNote: stringOption(source.grandOpenEventNote, DEFAULT_CORE_OPTIONS.grandOpenEventNote),
     initialUsers: normalizeInitialUsers(source.initialUsers),
     initialRoles: normalizeInitialRoles(source.initialRoles),
   };
@@ -110,6 +116,12 @@ function normalizeTime(value) {
   const minute = Number(match[2]);
   if (hour > 23 || minute > 59) return DEFAULT_CORE_OPTIONS.reservationOpenTime;
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+function normalizeDateString(value) {
+  if (typeof value !== "string") return DEFAULT_CORE_OPTIONS.grandOpenDate;
+  const trimmed = value.trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? trimmed : DEFAULT_CORE_OPTIONS.grandOpenDate;
 }
 
 function normalizeInitialUsers(value) {
@@ -357,12 +369,20 @@ export function buildEventDates(baseDate, stamp = new Date().toISOString()) {
       label: formatDateLabel(event_date),
       status,
       reservation_open_at: getReservationOpenAt(event_date),
-      note: status === "休み" ? "月1回の休み候補。必要に応じて変更してください。" : "",
+      note: getGeneratedEventNote(event_date, status),
       created_at: stamp,
       updated_at: stamp,
     });
   }
   return events;
+}
+
+function getGeneratedEventNote(eventDate, status) {
+  if (status === "休み") return "月1回の休み候補。必要に応じて変更してください。";
+  if (!coreOptions.grandOpenDate) return "";
+  if (eventDate < coreOptions.grandOpenDate) return coreOptions.preOpenEventNote;
+  if (eventDate === coreOptions.grandOpenDate) return coreOptions.grandOpenEventNote;
+  return "";
 }
 
 export function sortedUsers(users) {
@@ -982,7 +1002,7 @@ export function upsertReservationRequest(state, input, options = {}) {
       && request.desired_time_slot === payload.desired_time_slot;
   });
   if (payload.host_user_id && sameHostSameTimeRequest) {
-    errors.push("同じ担当は前半1枠、後半1枠までです。");
+    errors.push("同じ担当は1タイム1枠、2タイム1枠までです。");
   }
   if (!payload.host_user_id) errors.push("担当を選択してください。");
   if (payload.host_user_id && findStaffMember(draft, payload.host_user_id)) {
