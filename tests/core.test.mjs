@@ -245,6 +245,41 @@ test('default core data is generic and contains no deployment-specific credentia
   assert.ok(!JSON.stringify(state).toLowerCase().includes('abyss'));
 });
 
+test('configured event dates override weekly event generation', () => {
+  try {
+    const configured = configureCore({
+      reservationOpenWeekday: 3,
+      reservationOpenTime: '22:00',
+      grandOpenDate: '2026-07-09',
+      preOpenEventNote: '練習会&集団面談',
+      grandOpenEventNote: 'グランドオープン',
+      eventDates: [
+        { event_date: '2026-06-11', note: '練習会&集団面談', status: '終了' },
+        { event_date: '2026-06-25', note: '練習会&集団面談' },
+        { event_date: '2026-07-09' },
+      ],
+    });
+
+    assert.deepEqual(configured.eventDates.map((event) => event.event_date), [
+      '2026-06-11',
+      '2026-06-25',
+      '2026-07-09',
+    ]);
+
+    const state = buildDefaultState(new Date(2026, 5, 19, 12));
+    assert.deepEqual(state.event_dates.map((event) => event.event_date), [
+      '2026-06-11',
+      '2026-06-25',
+      '2026-07-09',
+    ]);
+    assert.equal(state.event_dates.find((event) => event.event_date === '2026-06-11').status, EVENT_STATUSES[1]);
+    assert.equal(state.event_dates.find((event) => event.event_date === '2026-07-09').note, 'グランドオープン');
+    assert.equal(state.event_dates.find((event) => event.event_date === '2026-06-25').reservation_open_at, '2026-06-24T22:00');
+  } finally {
+    configureCore();
+  }
+});
+
 test('finished events are automatically archived and reservation sections prefer ivan seats first', () => {
   const state = buildDefaultState(new Date(2026, 4, 15, 12));
   const pastEvent = state.event_dates.find((event) => event.event_date === '2026-05-08');

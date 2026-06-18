@@ -137,9 +137,21 @@ test("window config contains the EXCEED deployment identifiers and branding", as
   assert.equal(config.core.adminPassword, "exceed2026");
   assert.deepEqual([...config.core.eventWeekdays], [4]);
   assert.equal(config.core.firstWeekHolidayCandidates, false);
-  assert.equal(config.core.grandOpenDate, "2026-07-02");
-  assert.equal(config.core.preOpenEventNote, "グランドオープン前の練習会");
+  assert.equal(config.core.grandOpenDate, "2026-07-09");
+  assert.equal(config.core.preOpenEventNote, "練習会&集団面談");
   assert.equal(config.core.grandOpenEventNote, "グランドオープン");
+  assert.equal(
+    JSON.stringify(config.core.eventDates.map((event) => [event.event_date, event.note])),
+    JSON.stringify([
+      ["2026-06-11", "練習会&集団面談"],
+      ["2026-06-18", "練習会&集団面談"],
+      ["2026-06-25", "練習会&集団面談"],
+      ["2026-07-09", "グランドオープン"],
+      ["2026-07-16", "営業日"],
+      ["2026-07-23", "営業日"],
+      ["2026-07-30", "営業日"],
+    ]),
+  );
 });
 
 test("Supabase schema includes every store state row ID", async () => {

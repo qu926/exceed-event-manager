@@ -50,6 +50,7 @@ const DEFAULT_CORE_OPTIONS = {
   grandOpenDate: "",
   preOpenEventNote: "",
   grandOpenEventNote: "",
+  eventDates: [],
   initialUsers: DEFAULT_INITIAL_USERS,
   initialRoles: DEFAULT_INITIAL_ROLES,
 };
@@ -78,6 +79,7 @@ function normalizeCoreOptions(options = {}) {
     grandOpenDate: normalizeDateString(source.grandOpenDate),
     preOpenEventNote: stringOption(source.preOpenEventNote, DEFAULT_CORE_OPTIONS.preOpenEventNote),
     grandOpenEventNote: stringOption(source.grandOpenEventNote, DEFAULT_CORE_OPTIONS.grandOpenEventNote),
+    eventDates: normalizeConfiguredEventDates(source.eventDates),
     initialUsers: normalizeInitialUsers(source.initialUsers),
     initialRoles: normalizeInitialRoles(source.initialRoles),
   };
@@ -114,6 +116,32 @@ function normalizeDateString(value) {
   return /^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? trimmed : DEFAULT_CORE_OPTIONS.grandOpenDate;
 }
 
+function normalizeConfiguredEventDates(value) {
+  if (!Array.isArray(value)) return [];
+  const eventsByDate = new Map();
+  for (const item of value) {
+    const event = typeof item === "string" ? { event_date: item } : { ...(item || {}) };
+    const eventDate = normalizeDateString(event.event_date || event.date);
+    if (!eventDate) continue;
+    const status = EVENT_STATUSES.includes(event.status) ? event.status : EVENT_STATUSES[0];
+    eventsByDate.set(eventDate, {
+      id: event.id || `ev_${eventDate.replaceAll("-", "")}`,
+      event_date: eventDate,
+      label: event.label || formatDateLabel(eventDate),
+      status,
+      note: stringOption(event.note, ""),
+      reservation_open_at: normalizeDateTimeString(event.reservation_open_at),
+    });
+  }
+  return [...eventsByDate.values()].sort((a, b) => a.event_date.localeCompare(b.event_date));
+}
+
+function normalizeDateTimeString(value) {
+  if (typeof value !== "string") return "";
+  const trimmed = value.trim();
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(trimmed) ? trimmed : "";
+}
+
 function normalizeInitialUsers(value) {
   const users = Array.isArray(value) ? value : DEFAULT_INITIAL_USERS;
   return users.map((user) => ({ ...(user || {}) }));
@@ -128,6 +156,7 @@ function copyCoreOptions(options) {
   return {
     ...options,
     eventWeekdays: [...options.eventWeekdays],
+    eventDates: options.eventDates.map((event) => ({ ...event })),
     initialUsers: options.initialUsers.map((user) => ({ ...user })),
     initialRoles: options.initialRoles.map((role) => (typeof role === "string" ? role : { ...role })),
   };
@@ -340,6 +369,18 @@ function makeUser(input, index, stamp) {
 }
 
 export function buildEventDates(baseDate, stamp = new Date().toISOString()) {
+  if (coreOptions.eventDates.length) {
+    return coreOptions.eventDates.map((event) => ({
+      id: event.id,
+      event_date: event.event_date,
+      label: event.label || formatDateLabel(event.event_date),
+      status: event.status,
+      reservation_open_at: event.reservation_open_at || getReservationOpenAt(event.event_date),
+      note: event.note || getGeneratedEventNote(event.event_date, event.status),
+      created_at: stamp,
+      updated_at: stamp,
+    }));
+  }
   const year = baseDate.getFullYear();
   const month = baseDate.getMonth();
   const start = new Date(year, month - 1, 1);

@@ -42,14 +42,15 @@ npm.cmd run check
 - `core.eventWeekdays`: 営業曜日。JavaScript の曜日番号で、木曜は `4`。
 - `core.reservationOpenWeekday` / `core.reservationOpenTime`: 予約解放曜日と時刻。
 - `core.firstWeekHolidayCandidates`: 各月の最初の開催日を休み候補にするか。
-- `core.grandOpenDate`: グランドオープン日。EXCEED は `2026-07-02`。
+- `core.grandOpenDate`: グランドオープン日。EXCEED は `2026-07-09`。
 - `core.preOpenEventNote` / `core.grandOpenEventNote`: グランドオープン前後の日程メモ。
+- `core.eventDates`: 確定済みの開催日。設定した場合は週次自動生成より優先します。
 
 EXCEEDの営業条件は次の通りです。
 
-- グランドオープン: 2026-07-02
-- それ以前の木曜営業日は練習会として初期生成します。
-- 営業日: 毎週木曜
+- 練習会&集団面談: 2026-06-11、2026-06-18、2026-06-25
+- グランドオープン: 2026-07-09
+- 営業日: 2026-07-16、2026-07-23、2026-07-30
 - 予約枠: `1タイム 22:00~`、`2タイム 23:00~`
 - 営業構成: 1インスタンス固定。運営画面で通常席数とアイバン席数を設定します。
 
