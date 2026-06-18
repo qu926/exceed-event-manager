@@ -123,7 +123,7 @@ test("index metadata uses the EXCEED title and logo", async () => {
   assert.match(html, /<meta\b(?=[^>]*\bproperty=["']og:url["'])(?=[^>]*\bcontent=["']https:\/\/qu926\.github\.io\/exceed-event-manager\/["'])[^>]*>/);
   assert.match(
     html,
-    /<link\b(?=[^>]*\brel=["']icon["'])(?=[^>]*\bhref=["']\.\/assets\/exceed-logo\.png["'])[^>]*>/,
+    /<link\b(?=[^>]*\brel=["']icon["'])(?=[^>]*\bhref=["']\.\/assets\/exceed-logo\.png(?:\?v=[^"']+)?["'])[^>]*>/,
   );
 });
 
