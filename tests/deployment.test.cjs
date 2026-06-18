@@ -6,6 +6,7 @@ const { test } = require("node:test");
 
 const root = path.resolve(__dirname, "..");
 const slug = "exceed-event-manager";
+const storeSlugs = ["exceed-event-manager", "syndicate-event-manager", "central-event-manager"];
 const title = "EXCEED 勤怠・予約管理";
 const logoPath = "./assets/exceed-logo.png";
 const homepage = "https://qu926.github.io/exceed-event-manager/";
@@ -90,6 +91,45 @@ test("window config contains the EXCEED deployment identifiers and branding", as
   assert.equal(config.logoPath, logoPath);
   assert.equal(config.logoAlt, "EXCEED ロゴ");
   assert.deepEqual([...config.groupStores], ["EXCEED", "SYNDICATE", "THE CENTRAL"]);
+  const storeSummary = config.stores.map((store) => ({
+    key: store.key,
+    appId: store.appId,
+    stateRowId: store.stateRowId,
+    brandName: store.brandName,
+    logoPath: store.logoPath,
+    sitePassword: store.sitePassword,
+  }));
+  assert.equal(
+    JSON.stringify(storeSummary),
+    JSON.stringify(
+      [
+        {
+          key: "exceed",
+          appId: "exceed-event-manager",
+          stateRowId: "exceed-event-manager",
+          brandName: "EXCEED",
+          logoPath,
+          sitePassword: "EXCEED",
+        },
+        {
+          key: "syndicate",
+          appId: "syndicate-event-manager",
+          stateRowId: "syndicate-event-manager",
+          brandName: "SYNDICATE",
+          logoPath: "./assets/syndicate-logo.png",
+          sitePassword: "SYNDICATE",
+        },
+        {
+          key: "central",
+          appId: "central-event-manager",
+          stateRowId: "central-event-manager",
+          brandName: "THE CENTRAL",
+          logoPath: "./assets/central-logo.png",
+          sitePassword: "CENTRAL",
+        },
+      ],
+    ),
+  );
   assert.equal(config.core.sitePassword, "exceed");
   assert.equal(config.core.adminPassword, "exceed2026");
   assert.deepEqual([...config.core.eventWeekdays], [4]);
@@ -99,23 +139,14 @@ test("window config contains the EXCEED deployment identifiers and branding", as
   assert.equal(config.core.grandOpenEventNote, "グランドオープン");
 });
 
-test("Supabase schema consistently uses the EXCEED state row ID", async () => {
+test("Supabase schema includes every store state row ID", async () => {
   const schema = await readText("supabase", "schema.sql");
-  const policyIds = [...schema.matchAll(/\bid\s*=\s*'([^']+)'/g)]
-    .map((match) => match[1]);
-  const insertedIds = [...schema.matchAll(/\bvalues\s*\(\s*'([^']+)'/gi)]
-    .map((match) => match[1]);
-  const stateIds = [...policyIds, ...insertedIds];
-
-  assert.ok(stateIds.length > 0, "schema.sql must contain state row ID checks");
-  assert.deepEqual(
-    [...new Set(stateIds)],
-    [slug],
-    "every schema state row ID must match the EXCEED slug",
-  );
+  for (const storeSlug of storeSlugs) {
+    assert.ok(schema.includes(`'${storeSlug}'`), `schema.sql must include ${storeSlug}`);
+  }
 });
 
-test("index metadata uses the EXCEED title and logo", async () => {
+test("index metadata uses the deployment URL and producer favicon", async () => {
   const html = await readText("index.html");
 
   assert.match(html, /<title>\s*EXCEED 勤怠・予約管理\s*<\/title>/);
@@ -123,7 +154,7 @@ test("index metadata uses the EXCEED title and logo", async () => {
   assert.match(html, /<meta\b(?=[^>]*\bproperty=["']og:url["'])(?=[^>]*\bcontent=["']https:\/\/qu926\.github\.io\/exceed-event-manager\/["'])[^>]*>/);
   assert.match(
     html,
-    /<link\b(?=[^>]*\brel=["']icon["'])(?=[^>]*\bhref=["']\.\/assets\/exceed-logo\.png(?:\?v=[^"']+)?["'])[^>]*>/,
+    /<link\b(?=[^>]*\brel=["']icon["'])(?=[^>]*\bhref=["']\.\/assets\/exe-produce-logo\.png(?:\?v=[^"']+)?["'])[^>]*>/,
   );
 });
 
@@ -134,14 +165,21 @@ test("README documents the EXCEED deployment slug", async () => {
   assert.match(readme, /https:\/\/[^/\s]+\.github\.io\/exceed-event-manager\//);
 });
 
-test("configured EXCEED logo asset exists and is not empty", async () => {
+test("configured store logo assets exist and are not empty", async () => {
   const config = await loadWindowConfig();
-  const normalizedLogoPath = config.logoPath.replace(/^\.\//, "");
-  const logoFile = fromRoot(...normalizedLogoPath.split("/"));
-  const stat = await fs.stat(logoFile);
+  const logoPaths = [
+    config.producerLogoPath,
+    ...config.stores.map((store) => store.logoPath),
+  ];
 
-  assert.ok(stat.isFile(), `${config.logoPath} must be a file`);
-  assert.ok(stat.size > 0, `${config.logoPath} must not be empty`);
+  for (const configuredLogoPath of logoPaths) {
+    const normalizedLogoPath = configuredLogoPath.replace(/^\.\//, "");
+    const logoFile = fromRoot(...normalizedLogoPath.split("/"));
+    const stat = await fs.stat(logoFile);
+
+    assert.ok(stat.isFile(), `${configuredLogoPath} must be a file`);
+    assert.ok(stat.size > 0, `${configuredLogoPath} must not be empty`);
+  }
 });
 
 test("repository text contains no legacy template branding", async () => {

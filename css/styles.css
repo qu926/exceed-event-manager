@@ -93,15 +93,7 @@ textarea:disabled {
 .brand-lockup {
   display: flex;
   align-items: center;
-  gap: 18px;
-  min-width: min(100%, 460px);
-}
-
-.brand-logo-stack {
-  display: grid;
-  align-items: center;
-  gap: 6px;
-  width: 156px;
+  min-width: min(100%, 240px);
 }
 
 .producer-mark {
@@ -112,45 +104,23 @@ textarea:disabled {
 }
 
 .brand-mark {
-  width: 156px;
-  height: 80px;
+  width: 210px;
+  height: 96px;
   object-fit: contain;
   filter: drop-shadow(0 0 18px rgba(255, 255, 255, 0.2));
 }
 
-.brand-copy {
-  display: grid;
-  gap: 5px;
-}
-
-.brand-subtitle {
-  color: var(--muted);
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-}
-
-.brand-family {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 3px;
-}
-
-.brand-family span {
-  border: 1px solid rgba(218, 222, 228, 0.22);
-  border-radius: 999px;
-  color: var(--muted);
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  padding: 4px 9px;
-}
-
-.brand-family .is-current {
-  border-color: rgba(246, 248, 250, 0.62);
-  background: rgba(255, 255, 255, 0.1);
+.brand-text-logo {
   color: #fff;
+  font-family:
+    Georgia,
+    "Times New Roman",
+    "Yu Mincho",
+    serif;
+  font-size: 28px;
+  letter-spacing: 0.14em;
+  line-height: 1.2;
+  text-shadow: 0 0 22px rgba(230, 235, 242, 0.28);
 }
 
 h1,
@@ -383,6 +353,11 @@ h3 {
   width: 100%;
   padding: 0 12px;
   text-align: left;
+}
+
+.store-switcher {
+  display: grid;
+  gap: 6px;
 }
 
 .stack {
@@ -1472,12 +1447,7 @@ textarea:focus {
 
 .login-producer-mark {
   width: min(360px, 90%);
-  height: 92px;
-}
-
-.login-brand-mark {
-  width: min(380px, 92%);
-  height: 180px;
+  height: 156px;
 }
 
 .login-note {
@@ -1579,10 +1549,6 @@ textarea:focus {
 
   .brand-lockup {
     flex-direction: column;
-  }
-
-  .brand-logo-stack {
-    width: 100%;
   }
 
   .producer-mark,

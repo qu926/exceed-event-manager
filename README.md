@@ -30,14 +30,13 @@ npm.cmd run check
 
 - `appId`: イベントごとに一意な英数字とハイフン。ブラウザ保存領域の識別子にも使われます。
 - `producerName` / `producerLogoPath`: .EXE PRODUCE の運営ブランド表示。
-- `brandName`: ヘッダーに表示する店舗名。
-- `title`: ブラウザタイトルと画面見出し。
-- `eyebrow`: ロゴ横の小見出し。
-- `logoPath` / `logoAlt`: 店舗ロゴのパスと代替テキスト。EXCEEDロゴは `logoPath: "./assets/exceed-logo.png"` です。
-- `groupStores`: 今後展開予定の系列店舗。現在は `EXCEED`、`SYNDICATE`、`THE CENTRAL` を表示します。
+- `brandName` / `title` / `logoPath`: 既定店舗（EXCEED）の表示設定。
+- `stores`: `EXCEED`、`SYNDICATE`、`THE CENTRAL` の店舗別設定。各店舗の `appId`、`stateRowId`、ロゴ、店舗パスワード、初期ユーザーを分けます。
+- `groupStores`: 系列店舗名の一覧。
 - `storageMode`: `"local"` または `"supabase"`。
-- `supabaseUrl` / `supabaseAnonKey` / `stateRowId`: Supabase の接続設定と保存行 ID。
-- `core.sitePassword` / `core.adminPassword`: 簡易ロック用パスワード。公開前に必ず変更します。
+- `supabaseUrl` / `supabaseAnonKey`: Supabase の接続設定。
+- `stores[].sitePassword`: 店舗別の簡易ロック用パスワード。既定では `EXCEED`、`SYNDICATE`、`CENTRAL` です。
+- `core.adminPassword`: 共通の運営パスワード。公開前に必ず変更します。
 - `core.initialUsers`: 初回起動時に登録するメンバー。不要なサンプルは削除します。
 - `core.initialRoles`: 初期ロール。
 - `core.eventWeekdays`: 営業曜日。JavaScript の曜日番号で、木曜は `4`。
@@ -54,7 +53,7 @@ EXCEEDの営業条件は次の通りです。
 - 予約枠: `1タイム 22:00~`、`2タイム 23:00~`
 - 営業構成: 1インスタンス固定。運営画面で通常席数とアイバン席数を設定します。
 
-現在の保存IDは `exceed-event-manager` です。別イベントへ複製するときは `appId` と `stateRowId` を必ず変更してください。
+現在の保存IDは店舗ごとに分かれています。EXCEED は `exceed-event-manager`、SYNDICATE は `syndicate-event-manager`、THE CENTRAL は `central-event-manager` です。別イベントへ複製するときは `stores[].appId` と `stores[].stateRowId` を必ず変更してください。
 
 ## GitHub Pages
 
@@ -71,7 +70,7 @@ https://qu926.github.io/exceed-event-manager/
 既定の `storageMode: "local"` では `localStorage` に保存します。端末やブラウザをまたいで共有する場合は Supabase を設定します。
 
 1. Supabase でプロジェクトを作成します。
-2. `supabase/schema.sql` 内の `'exceed-event-manager'` が、`js/config.js` の `stateRowId` と一致していることを確認します。
+2. `supabase/schema.sql` 内の3つの ID が、`js/config.js` の `stores[].stateRowId` と一致していることを確認します。
 3. SQL Editor でスキーマを実行します。
 4. `js/config.js` の `storageMode` を `"supabase"` に変更し、Project URL と publishable key または anon public key を設定します。
 
@@ -79,10 +78,14 @@ https://qu926.github.io/exceed-event-manager/
 storageMode: "supabase",
 supabaseUrl: "https://xxxxx.supabase.co",
 supabaseAnonKey: "sb_publishable_xxxxx",
-stateRowId: "exceed-event-manager",
+stores: [
+  { key: "exceed", stateRowId: "exceed-event-manager" },
+  { key: "syndicate", stateRowId: "syndicate-event-manager" },
+  { key: "central", stateRowId: "central-event-manager" },
+],
 ```
 
-`stateRowId` と SQL 内の ID が一致しない場合、読み書きできません。異なるイベントで同じ `stateRowId` を使うとデータが混在するため、イベントごとに必ず分けてください。
+店舗ごとの `stateRowId` と SQL 内の ID が一致しない場合、読み書きできません。異なる店舗やイベントで同じ `stateRowId` を使うとデータが混在するため、必ず分けてください。
 
 ## 主な機能
 

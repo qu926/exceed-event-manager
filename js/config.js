@@ -11,6 +11,71 @@ window.EVENT_MANAGER_CONFIG = {
   logoPath: "./assets/exceed-logo.png",
   logoAlt: "EXCEED ロゴ",
   groupStores: ["EXCEED", "SYNDICATE", "THE CENTRAL"],
+  stores: [
+    {
+      key: "exceed",
+      appId: "exceed-event-manager",
+      stateRowId: "exceed-event-manager",
+      brandName: "EXCEED",
+      title: "EXCEED 勤怠・予約管理",
+      eyebrow: "EXCEED Event Manager",
+      logoPath: "./assets/exceed-logo.png",
+      logoAlt: "EXCEED ロゴ",
+      sitePassword: "EXCEED",
+      core: {
+        initialUsers: [
+          {
+            id: "u_exceed_manager",
+            display_name: "EXCEED運営",
+            kana: "えくしーどうんえい",
+            role: "幹部",
+          },
+        ],
+      },
+    },
+    {
+      key: "syndicate",
+      appId: "syndicate-event-manager",
+      stateRowId: "syndicate-event-manager",
+      brandName: "SYNDICATE",
+      title: "SYNDICATE 勤怠・予約管理",
+      eyebrow: "SYNDICATE Event Manager",
+      logoPath: "./assets/syndicate-logo.png",
+      logoAlt: "SYNDICATE ロゴ",
+      sitePassword: "SYNDICATE",
+      core: {
+        initialUsers: [
+          {
+            id: "u_syndicate_manager",
+            display_name: "SYNDICATE運営",
+            kana: "しんじけーとうんえい",
+            role: "幹部",
+          },
+        ],
+      },
+    },
+    {
+      key: "central",
+      appId: "central-event-manager",
+      stateRowId: "central-event-manager",
+      brandName: "THE CENTRAL",
+      title: "THE CENTRAL 勤怠・予約管理",
+      eyebrow: "THE CENTRAL Event Manager",
+      logoPath: "./assets/central-logo.png",
+      logoAlt: "THE CENTRAL ロゴ",
+      sitePassword: "CENTRAL",
+      core: {
+        initialUsers: [
+          {
+            id: "u_central_manager",
+            display_name: "THE CENTRAL運営",
+            kana: "ざせんとらるうんえい",
+            role: "幹部",
+          },
+        ],
+      },
+    },
+  ],
 
   // 安全な既定値として、このブラウザ内だけに保存します。
   storageMode: "local",

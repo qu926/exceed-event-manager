@@ -116,26 +116,25 @@ function loadRequiredAppConfig() {
 }
 
 const APP_CONFIG = loadRequiredAppConfig();
-const APP_ID = String(APP_CONFIG.appId).trim();
-const STORAGE_KEY = `${APP_ID}:state:v1`;
-const PENDING_LOCAL_CHANGES_KEY = `${APP_ID}:pending-local-changes`;
-const SITE_SESSION_KEY = `${APP_ID}:site-unlocked`;
-const ADMIN_SESSION_KEY = `${APP_ID}:admin-unlocked`;
-const BRAND_NAME = String(APP_CONFIG.brandName);
-const APP_TITLE = String(APP_CONFIG.title);
-const APP_EYEBROW = String(APP_CONFIG.eyebrow || BRAND_NAME);
-const LOGO_PATH = String(APP_CONFIG.logoPath || "").trim();
-const LOGO_ALT = String(APP_CONFIG.logoAlt || `${BRAND_NAME} ロゴ`);
+const BASE_APP_ID = String(APP_CONFIG.appId).trim();
+const STORES = buildStoreConfigs(APP_CONFIG);
+const SITE_SESSION_KEY = `${BASE_APP_ID}:site-unlocked`;
+const ADMIN_SESSION_KEY = `${BASE_APP_ID}:admin-unlocked`;
+const STORE_SESSION_KEY = `${BASE_APP_ID}:active-store`;
 const PRODUCER_NAME = String(APP_CONFIG.producerName || "").trim();
 const PRODUCER_LOGO_PATH = String(APP_CONFIG.producerLogoPath || "").trim();
-const GROUP_STORES = Array.isArray(APP_CONFIG.groupStores)
-  ? APP_CONFIG.groupStores.map((store) => String(store || "").trim()).filter(Boolean)
-  : [];
-const STATE_ROW_ID = String(APP_CONFIG.stateRowId || APP_ID);
+let activeStore = null;
+let storeContextVersion = 0;
+let APP_ID = "";
+let STORAGE_KEY = "";
+let PENDING_LOCAL_CHANGES_KEY = "";
+let BRAND_NAME = "";
+let APP_TITLE = "";
+let LOGO_PATH = "";
+let LOGO_ALT = "";
+let STATE_ROW_ID = "";
 
-configureCore(APP_CONFIG.core);
-document.title = APP_TITLE;
-document.body.dataset.brand = APP_ID;
+setActiveStoreConfig(getInitialStoreKey());
 
 const root = document.querySelector("#app");
 const toastRoot = document.querySelector("#toast");
@@ -185,10 +184,7 @@ let view = {
   editingReservationRequestId: "",
 };
 
-view.eventId = getDefaultEventId();
-view.archiveEventId = getDefaultArchiveEventId();
-view.attendanceUserId = getActiveUsers(state)[0]?.id || "";
-view.staffAttendanceMemberId = getActiveStaffMembers(state)[0]?.id || "";
+resetViewForCurrentStore();
 restoreViewFromLocation();
 
 render();
@@ -202,6 +198,124 @@ window.addEventListener("hashchange", () => {
   render();
 });
 window.setInterval(archiveEndedEvents, 60_000);
+
+function buildStoreConfigs(config) {
+  const stores = Array.isArray(config.stores) && config.stores.length
+    ? config.stores
+    : [{
+      key: String(config.brandName || config.appId || "store").toLowerCase(),
+      appId: config.appId,
+      stateRowId: config.stateRowId,
+      brandName: config.brandName,
+      title: config.title,
+      eyebrow: config.eyebrow,
+      logoPath: config.logoPath,
+      logoAlt: config.logoAlt,
+      sitePassword: config.core?.sitePassword,
+      adminPassword: config.core?.adminPassword,
+      core: config.core,
+    }];
+  return stores.map((store, index) => normalizeStoreConfig(config, store, index));
+}
+
+function normalizeStoreConfig(config, store, index) {
+  const key = String(store.key || store.appId || store.brandName || `store-${index + 1}`).trim().toLowerCase().replace(/\s+/g, "-");
+  const brandName = String(store.brandName || config.brandName || key).trim();
+  const appId = String(store.appId || `${BASE_APP_ID}-${key}`).trim();
+  const core = {
+    ...(config.core || {}),
+    ...(store.core || {}),
+  };
+  if (store.sitePassword) core.sitePassword = String(store.sitePassword);
+  if (store.adminPassword) core.adminPassword = String(store.adminPassword);
+  return {
+    key,
+    appId,
+    stateRowId: String(store.stateRowId || appId),
+    brandName,
+    title: String(store.title || `${brandName} 勤怠・予約管理`),
+    eyebrow: String(store.eyebrow || `${brandName} Event Manager`),
+    logoPath: String(store.logoPath || config.logoPath || "").trim(),
+    logoAlt: String(store.logoAlt || `${brandName} ロゴ`),
+    core,
+  };
+}
+
+function getInitialStoreKey() {
+  const sessionKey = sessionStorage.getItem(STORE_SESSION_KEY);
+  if (findStoreConfig(sessionKey)) return sessionKey;
+  return STORES[0]?.key || "";
+}
+
+function getStoreLoginMatch(password) {
+  const raw = String(password || "").trim().toLowerCase();
+  return STORES.find((store) => raw && raw === String(store.core.sitePassword || "").trim().toLowerCase()) || null;
+}
+
+function isAdminPassword(password) {
+  const raw = String(password || "");
+  return STORES.some((store) => raw === store.core.adminPassword);
+}
+
+function findStoreConfig(key) {
+  return STORES.find((store) => store.key === key) || null;
+}
+
+function setActiveStoreConfig(storeKey) {
+  activeStore = findStoreConfig(storeKey) || STORES[0];
+  APP_ID = activeStore.appId;
+  STORAGE_KEY = `${APP_ID}:state:v1`;
+  PENDING_LOCAL_CHANGES_KEY = `${APP_ID}:pending-local-changes`;
+  BRAND_NAME = activeStore.brandName;
+  APP_TITLE = activeStore.title;
+  LOGO_PATH = activeStore.logoPath;
+  LOGO_ALT = activeStore.logoAlt;
+  STATE_ROW_ID = activeStore.stateRowId;
+  configureCore(activeStore.core);
+  document.title = APP_TITLE;
+  document.body.dataset.brand = APP_ID;
+  document.body.dataset.store = activeStore.key;
+  sessionStorage.setItem(STORE_SESSION_KEY, activeStore.key);
+  storeContextVersion += 1;
+}
+
+function switchStore(storeKey, { keepAdmin = adminUnlocked, message = "" } = {}) {
+  if (!findStoreConfig(storeKey)) return false;
+  setActiveStoreConfig(storeKey);
+  hasStoredLocalState = false;
+  state = loadState();
+  syncStatus = getInitialSyncStatus();
+  const archiveResult = archiveFinishedEvents(state);
+  if (archiveResult.changed) {
+    state = archiveResult.state;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }
+  resetViewForCurrentStore();
+  siteUnlocked = true;
+  adminUnlocked = keepAdmin;
+  sessionStorage.setItem(SITE_SESSION_KEY, "1");
+  if (keepAdmin) sessionStorage.setItem(ADMIN_SESSION_KEY, "1");
+  else sessionStorage.removeItem(ADMIN_SESSION_KEY);
+  saveViewToLocation();
+  render();
+  initializeSharedState(storeContextVersion);
+  if (message) showToast(message);
+  return true;
+}
+
+function resetViewForCurrentStore() {
+  view.eventId = getDefaultEventId();
+  view.archiveEventId = getDefaultArchiveEventId();
+  view.attendanceUserId = getActiveUsers(state)[0]?.id || "";
+  view.staffAttendanceMemberId = getActiveStaffMembers(state)[0]?.id || "";
+  view.editingReservationRequestId = "";
+  view.editingUserId = "";
+  view.editingStaffMemberId = "";
+  view.editingVacationId = "";
+  view.editingEventId = "";
+  view.dashboardDetailType = "";
+  view.dashboardDetailKey = "";
+}
 
 function loadState() {
   try {
@@ -324,15 +438,17 @@ function getInitialSyncStatus() {
   return { mode, text: mode === "supabase" ? "共有DBに接続中" : "この端末に保存" };
 }
 
-async function initializeSharedState() {
+async function initializeSharedState(expectedVersion = storeContextVersion) {
   if (syncStatus.mode !== "supabase") return;
   try {
     const hasPendingLocalChanges = localStorage.getItem(PENDING_LOCAL_CHANGES_KEY) === "1";
     const localState = hasStoredLocalState && hasPendingLocalChanges ? state : null;
     const record = await loadSharedRecord();
+    if (expectedVersion !== storeContextVersion) return;
     if (record.state) {
       const migratedRemoteState = migrateState(record.state);
       const mergedState = localState ? mergeSharedState(migratedRemoteState, localState) : migratedRemoteState;
+      if (expectedVersion !== storeContextVersion) return;
       state = mergedState;
       let shouldSaveMigratedState = hasPersistableMigration(record.state, migratedRemoteState) || hasPersistableMerge(migratedRemoteState, mergedState);
       const result = archiveFinishedEvents(state);
@@ -348,9 +464,11 @@ async function initializeSharedState() {
       return;
     }
     await saveSharedState(state);
+    if (expectedVersion !== storeContextVersion) return;
     syncStatus = { mode: "supabase", text: "共有DBを初期化済み" };
     render();
   } catch (error) {
+    if (expectedVersion !== storeContextVersion) return;
     console.error(error);
     syncStatus = { mode: "error", text: shortSyncError(error, "共有DBに接続できません") };
     render();
@@ -538,8 +656,8 @@ function getDefaultEventId() {
 }
 
 function getNextConfiguredEventDate(baseDate = new Date()) {
-  const configuredWeekdays = Array.isArray(APP_CONFIG.core?.eventWeekdays)
-    ? APP_CONFIG.core.eventWeekdays.filter((day) => Number.isInteger(day) && day >= 0 && day <= 6)
+  const configuredWeekdays = Array.isArray(activeStore?.core?.eventWeekdays)
+    ? activeStore.core.eventWeekdays.filter((day) => Number.isInteger(day) && day >= 0 && day <= 6)
     : [];
   const weekdays = configuredWeekdays.length ? configuredWeekdays : [baseDate.getDay()];
   for (let offset = 1; offset <= 60; offset += 1) {
@@ -614,16 +732,7 @@ function render() {
     <div class="app-shell">
       <header class="app-header">
         <div class="brand-lockup" aria-label="${escapeAttr(`${BRAND_NAME} ${APP_TITLE}`)}">
-          <div class="brand-logo-stack">
-            ${PRODUCER_LOGO_PATH ? `<img class="producer-mark" src="${escapeAttr(PRODUCER_LOGO_PATH)}" alt="${escapeAttr(PRODUCER_NAME || ".EXE PRODUCE")}">` : ""}
-            ${LOGO_PATH ? `<img class="brand-mark" src="${escapeAttr(LOGO_PATH)}" alt="${escapeAttr(LOGO_ALT)}">` : ""}
-          </div>
-          <div class="brand-copy">
-            <p class="eyebrow">${escapeHtml(PRODUCER_NAME || APP_EYEBROW)}</p>
-            <h1>${escapeHtml(BRAND_NAME)}</h1>
-            <p class="brand-subtitle">${escapeHtml(APP_TITLE.replace(BRAND_NAME, "").trim() || APP_EYEBROW)}</p>
-            ${renderGroupStores()}
-          </div>
+          ${renderActiveStoreLogo()}
         </div>
         <nav class="top-nav" aria-label="主要画面">
           <span class="sync-pill ${syncStatus.mode}">${escapeHtml(syncStatus.text)}</span>
@@ -647,8 +756,6 @@ function renderSiteLogin() {
       <section class="panel login-panel">
         <div class="login-brand">
           ${PRODUCER_LOGO_PATH ? `<img class="producer-mark login-producer-mark" src="${escapeAttr(PRODUCER_LOGO_PATH)}" alt="${escapeAttr(PRODUCER_NAME || ".EXE PRODUCE")}">` : ""}
-          ${LOGO_PATH ? `<img class="brand-mark login-brand-mark" src="${escapeAttr(LOGO_PATH)}" alt="${escapeAttr(LOGO_ALT)}">` : ""}
-          ${renderGroupStores()}
         </div>
         <div class="panel-heading">
           <div>
@@ -658,23 +765,33 @@ function renderSiteLogin() {
         </div>
         <form class="stack" data-action="site-login">
           <label>
-            <span>サイト全体パスワード</span>
+            <span>店舗パスワード</span>
             <input name="password" type="password" autocomplete="current-password" required autofocus>
           </label>
           <button class="primary-button" type="submit">サイトを表示</button>
         </form>
-        <p class="login-note">運営パスワードでもログインできます。その場合は運営画面も同時に解放されます。</p>
+        <p class="login-note">EXCEED / SYNDICATE / THE CENTRAL の店舗パスワードで、それぞれの店舗画面を表示します。運営パスワードでは運営画面も同時に解放されます。</p>
       </section>
     </div>
   `;
 }
 
-function renderGroupStores() {
-  if (!GROUP_STORES.length) return "";
+function renderActiveStoreLogo() {
+  if (!LOGO_PATH) {
+    return `<strong class="brand-text-logo">${escapeHtml(BRAND_NAME)}</strong>`;
+  }
+  return `<img class="brand-mark" src="${escapeAttr(LOGO_PATH)}" alt="${escapeAttr(LOGO_ALT)}">`;
+}
+
+function renderStoreSwitcher() {
+  if (STORES.length <= 1) return "";
   return `
-    <div class="brand-family" aria-label="EXE PRODUCE stores">
-      ${GROUP_STORES.map((store) => `<span class="${store === BRAND_NAME ? "is-current" : ""}">${escapeHtml(store)}</span>`).join("")}
-    </div>
+    <label class="store-switcher">
+      <span>店舗切替</span>
+      <select data-role="store-select" aria-label="店舗切替">
+        ${STORES.map((store) => option(store.key, store.brandName, store.key === activeStore.key)).join("")}
+      </select>
+    </label>
   `;
 }
 
@@ -1322,6 +1439,7 @@ function renderAdminPage() {
         <select data-role="event-select" aria-label="対象日">
           ${renderEventOptions(view.eventId)}
         </select>
+        ${renderStoreSwitcher()}
         <div class="side-nav">
           ${adminTabButton("dashboard", "運営トップ")}
           ${adminTabButton("attendance", "ホスト勤怠")}
@@ -2499,24 +2617,25 @@ function handleSubmit(event) {
     return;
   }
   if (action === "site-login") {
-    if (data.password === state.settings.adminPassword) {
+    const store = getStoreLoginMatch(data.password);
+    if (store) {
+      switchStore(store.key, { keepAdmin: false, message: `${store.brandName}を表示しました。` });
+      return;
+    }
+    if (isAdminPassword(data.password)) {
       siteUnlocked = true;
       adminUnlocked = true;
       sessionStorage.setItem(SITE_SESSION_KEY, "1");
       sessionStorage.setItem(ADMIN_SESSION_KEY, "1");
       showToast("サイトと運営画面を表示しました。");
       render();
-    } else if (data.password === state.settings.sitePassword) {
-      siteUnlocked = true;
-      sessionStorage.setItem(SITE_SESSION_KEY, "1");
-      showToast("サイトを表示しました。");
-      render();
     } else {
       showToast("パスワードが違います。", "error");
     }
+    return;
   }
   if (action === "admin-login") {
-    if (data.password === state.settings.adminPassword) {
+    if (isAdminPassword(data.password)) {
       adminUnlocked = true;
       sessionStorage.setItem(ADMIN_SESSION_KEY, "1");
       showToast("運営画面を表示しました。");
@@ -2652,6 +2771,11 @@ function handleChange(event) {
   if (archiveEventSelect) {
     view.archiveEventId = archiveEventSelect.value;
     render();
+    return;
+  }
+  const storeSelect = event.target.closest("[data-role='store-select']");
+  if (storeSelect) {
+    switchStore(storeSelect.value, { keepAdmin: true, message: `${findStoreConfig(storeSelect.value)?.brandName || "店舗"}に切り替えました。` });
     return;
   }
   const attendanceUser = event.target.closest("[data-role='attendance-user-select']");

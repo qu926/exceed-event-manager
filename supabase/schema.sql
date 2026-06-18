@@ -13,19 +13,22 @@ drop policy if exists "app_state_update" on public.app_state;
 create policy "app_state_select"
 on public.app_state
 for select
-using (id = 'exceed-event-manager');
+using (id in ('exceed-event-manager', 'syndicate-event-manager', 'central-event-manager'));
 
 create policy "app_state_insert"
 on public.app_state
 for insert
-with check (id = 'exceed-event-manager');
+with check (id in ('exceed-event-manager', 'syndicate-event-manager', 'central-event-manager'));
 
 create policy "app_state_update"
 on public.app_state
 for update
-using (id = 'exceed-event-manager')
-with check (id = 'exceed-event-manager');
+using (id in ('exceed-event-manager', 'syndicate-event-manager', 'central-event-manager'))
+with check (id in ('exceed-event-manager', 'syndicate-event-manager', 'central-event-manager'));
 
 insert into public.app_state (id, payload)
-values ('exceed-event-manager', '{}'::jsonb)
+values
+  ('exceed-event-manager', '{}'::jsonb),
+  ('syndicate-event-manager', '{}'::jsonb),
+  ('central-event-manager', '{}'::jsonb)
 on conflict (id) do nothing;
