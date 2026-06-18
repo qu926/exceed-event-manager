@@ -18,8 +18,6 @@
   --yellow-soft: rgba(255, 194, 68, 0.15);
   --orange: #ffb05c;
   --orange-soft: rgba(255, 151, 59, 0.16);
-  --purple: #b68cff;
-  --purple-soft: rgba(151, 102, 255, 0.18);
   --gray-soft: rgba(160, 169, 181, 0.14);
   --input-border: var(--line);
   --shadow: 0 24px 70px rgba(0, 0, 0, 0.52);
@@ -329,10 +327,8 @@ h3 {
 .summary-card,
 .request-bucket,
 .request-card,
-.drink-plan-panel,
 .bulk-attendance-row,
-.archive-event,
-.tower-summary-item {
+.archive-event {
   background:
     linear-gradient(180deg, rgba(24, 24, 27, 0.94), rgba(7, 7, 8, 0.96));
   border-color: rgba(220, 224, 230, 0.22);
@@ -897,27 +893,10 @@ textarea:focus {
   margin-top: 18px;
 }
 
-.drink-plan-panel {
-  display: grid;
-  gap: 12px;
-  margin: 16px 0 18px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: rgba(8, 14, 23, 0.84);
-  padding: 14px;
-}
-
 .plan-note {
   color: var(--muted);
   font-size: 13px;
   font-weight: 700;
-}
-
-.drink-plan-form {
-  display: grid;
-  grid-template-columns: minmax(130px, 1fr) minmax(150px, 1fr) minmax(120px, 0.8fr) 88px minmax(180px, 1.4fr) auto;
-  gap: 10px;
-  align-items: end;
 }
 
 .bulk-attendance-form,
@@ -1008,129 +987,6 @@ textarea:focus {
   border-color: rgba(78, 161, 255, 0.58);
   background: var(--blue-soft);
   color: var(--blue);
-}
-
-.plan-total-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.plan-total-list li {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--surface-muted);
-  padding: 7px 10px;
-  font-size: 13px;
-  font-weight: 800;
-}
-
-.plan-total-list strong {
-  color: var(--blue);
-}
-
-.plan-table {
-  min-width: 760px;
-}
-
-.tower-overview {
-  display: grid;
-  gap: 12px;
-  margin-top: 16px;
-}
-
-.tower-summary-list {
-  display: grid;
-  gap: 10px;
-}
-
-.tower-summary-item {
-  display: grid;
-  gap: 10px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: rgba(8, 14, 23, 0.84);
-  padding: 14px;
-}
-
-.tower-summary-item.full {
-  border-color: rgba(255, 176, 92, 0.6);
-  background: var(--orange-soft);
-}
-
-.tower-summary-item.over {
-  border-color: rgba(255, 108, 108, 0.58);
-  background: var(--red-soft);
-}
-
-.tower-summary-main,
-.tower-counts,
-.tower-detail-list li {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.tower-counts {
-  justify-content: flex-start;
-  flex-wrap: wrap;
-}
-
-.tower-counts span {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: rgba(5, 10, 18, 0.82);
-  padding: 6px 10px;
-  font-size: 13px;
-  font-weight: 800;
-}
-
-.tower-counts strong {
-  color: var(--blue);
-}
-
-.tower-counts em {
-  color: var(--muted);
-  font-size: 11px;
-  font-style: normal;
-}
-
-.tower-detail-list {
-  display: grid;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.tower-detail-list li {
-  flex-wrap: wrap;
-  justify-content: flex-start;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: rgba(8, 14, 23, 0.84);
-  padding: 10px;
-}
-
-.tower-detail-list strong {
-  font-size: 13px;
-}
-
-.tower-detail-list em {
-  color: var(--muted);
-  font-size: 13px;
-  font-style: normal;
-  font-weight: 700;
 }
 
 .archive-list {
@@ -1404,10 +1260,6 @@ textarea:focus {
 
 .request-guest-row {
   grid-template-columns: minmax(180px, 1.3fr) minmax(120px, 0.75fr) minmax(180px, 1.3fr) minmax(120px, 0.75fr);
-}
-
-.request-drink-row {
-  grid-template-columns: repeat(5, minmax(90px, 1fr));
 }
 
 .request-submit-row {
@@ -1753,7 +1605,6 @@ textarea:focus {
 
   .form-grid,
   .bulk-attendance-row,
-  .drink-plan-form,
   .request-setting-form,
   .request-setting-controls,
   .request-setting-capacities,
@@ -1773,12 +1624,6 @@ textarea:focus {
 
   .span-2 {
     grid-column: auto;
-  }
-
-  .tower-summary-main,
-  .tower-detail-list li {
-    align-items: flex-start;
-    flex-direction: column;
   }
 
   .reservation-grid {

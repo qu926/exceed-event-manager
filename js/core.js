@@ -7,11 +7,9 @@ export const RESERVATION_ATTRIBUTE = "リピ";
 export const IVAN_ATTRIBUTE = "初回";
 export const IVAN_ATTRIBUTES = ["リピ", "初回"];
 export const TIME_SLOTS = ["1タイム", "2タイム"];
-export const REQUEST_TIME_SLOTS = ["1タイム", "2タイム", "どちらでも可"];
 export const REQUEST_TIME_SLOT_LABELS = {
   [TIME_SLOTS[0]]: "1タイム希望",
   [TIME_SLOTS[1]]: "2タイム希望",
-  "どちらでも可": "どちらでも可",
 };
 export const SEAT_TYPES = ["通常席", "アイバン席"];
 export const RESERVATION_SEAT_ORDER = [SEAT_TYPES[1], SEAT_TYPES[0]];
@@ -27,14 +25,6 @@ export const SLOT_LIMITS = {
   "2タイム:アイバン席": 2,
 };
 
-export const DRINK_LIMITS = {
-  tower: { label: "タワー", limit: 2 },
-  purple: { label: "パープル", limit: 6 },
-  red: { label: "レッド", limit: 10 },
-  blue: { label: "ブルー", limit: 10 },
-  green: { label: "グリーン", limit: 20 },
-};
-export const DRINK_PLAN_TYPES = Object.entries(DRINK_LIMITS).map(([key, value]) => ({ key, label: value.label }));
 export const RESERVATION_REQUEST_HOLD_LIMIT_PER_TIME_SLOT = 3;
 export const RESERVATION_REQUEST_NORMAL_CAPACITY_PER_INSTANCE = 8;
 export const RESERVATION_REQUEST_IVAN_CAPACITY_PER_INSTANCE = 2;
@@ -208,7 +198,6 @@ export function mergeSharedState(remoteState, localState) {
   });
   merged.reservation_settings = mergeByKey(remote.reservation_settings, local.reservation_settings, (item) => item.event_date_id || item.id);
   merged.reservation_requests = mergeByKey(remote.reservation_requests, local.reservation_requests, (item) => item.id);
-  merged.drink_plans = mergeByKey(remote.drink_plans, local.drink_plans, (item) => item.id);
   merged.histories = mergeHistory(remote.histories, local.histories);
   return merged;
 }
@@ -321,7 +310,6 @@ export function buildDefaultState(baseDate = new Date()) {
     reservations: [],
     reservation_settings: [],
     reservation_requests: [],
-    drink_plans: [],
     histories: [],
   };
 }
@@ -652,19 +640,8 @@ export function normalizeReservation(input) {
     ivan_name: (input.ivan_name || "").trim(),
     attribute: RESERVATION_ATTRIBUTE,
     ivan_attribute: IVAN_ATTRIBUTES.includes(input.ivan_attribute) ? input.ivan_attribute : IVAN_ATTRIBUTE,
-    purple_count: toCount(input.purple_count),
-    red_count: toCount(input.red_count),
-    blue_count: toCount(input.blue_count),
-    green_count: toCount(input.green_count),
-    tower_count: toCount(input.tower_count) > 0 ? 1 : 0,
     memo: input.memo || "",
   };
-}
-
-function toCount(value) {
-  const parsed = Number.parseInt(value, 10);
-  if (Number.isNaN(parsed) || parsed < 0) return 0;
-  return parsed;
 }
 
 export function isReservationFilled(reservation) {
@@ -673,11 +650,6 @@ export function isReservationFilled(reservation) {
     reservation.host_user_id ||
     reservation.princess_name ||
     reservation.ivan_name ||
-    reservation.purple_count ||
-    reservation.red_count ||
-    reservation.blue_count ||
-    reservation.green_count ||
-    reservation.tower_count ||
     reservation.memo
   );
 }
@@ -801,15 +773,19 @@ export function deleteReservation(state, reservationId, now = new Date()) {
 
 export function getReservationSetting(state, eventId) {
   const setting = (state.reservation_settings || []).find((item) => String(item.event_date_id) === String(eventId));
-  const instanceCount = Number(setting?.instance_count) === 2 ? 2 : 1;
-  const defaultNormalCapacity = instanceCount * RESERVATION_REQUEST_NORMAL_CAPACITY_PER_INSTANCE;
+  const normalCapacity = toRequestCapacity(
+    setting?.normal_capacity ?? setting?.normal_capacity_front,
+    RESERVATION_REQUEST_NORMAL_CAPACITY_PER_INSTANCE,
+  );
+  const ivanCapacity = toRequestCapacity(setting?.ivan_capacity, RESERVATION_REQUEST_IVAN_CAPACITY_PER_INSTANCE);
   return {
     id: setting?.id || `request_setting_${eventId}`,
     event_date_id: eventId,
-    instance_count: instanceCount,
-    normal_capacity_front: instanceCount === 2 ? toRequestCapacity(setting?.normal_capacity_front, defaultNormalCapacity) : defaultNormalCapacity,
-    normal_capacity_back: instanceCount === 2 ? toRequestCapacity(setting?.normal_capacity_back, defaultNormalCapacity) : defaultNormalCapacity,
-    ivan_capacity: instanceCount === 2 ? toIvanCapacity(setting?.ivan_capacity, 4) : RESERVATION_REQUEST_IVAN_CAPACITY_PER_INSTANCE,
+    instance_count: 1,
+    normal_capacity: normalCapacity,
+    normal_capacity_front: normalCapacity,
+    normal_capacity_back: normalCapacity,
+    ivan_capacity: ivanCapacity,
     created_at: setting?.created_at || null,
     updated_at: setting?.updated_at || null,
   };
@@ -821,16 +797,9 @@ function toRequestCapacity(value, fallback) {
   return Math.max(0, Math.min(99, Math.floor(count)));
 }
 
-function toIvanCapacity(value, fallback) {
-  const count = Number(value);
-  if (count === 2 || count === 4) return count;
-  return fallback;
-}
-
 export function getReservationRequestNormalCapacity(state, eventId, timeSlot) {
   const setting = getReservationSetting(state, eventId);
-  if (timeSlot === TIME_SLOTS[0]) return setting.normal_capacity_front;
-  if (timeSlot === TIME_SLOTS[1]) return setting.normal_capacity_back;
+  if (TIME_SLOTS.includes(timeSlot)) return setting.normal_capacity;
   return 0;
 }
 
@@ -889,11 +858,11 @@ export function upsertReservationSetting(state, input, now = new Date()) {
   const event = findEvent(draft, eventId);
   const errors = [];
   if (!event) errors.push("イベント日が見つかりません。");
-  const instanceCount = Number(input.instance_count) === 2 ? 2 : 1;
-  const defaultNormalCapacity = instanceCount * RESERVATION_REQUEST_NORMAL_CAPACITY_PER_INSTANCE;
-  const normalCapacityFront = instanceCount === 2 ? toRequestCapacity(input.normal_capacity_front, defaultNormalCapacity) : defaultNormalCapacity;
-  const normalCapacityBack = instanceCount === 2 ? toRequestCapacity(input.normal_capacity_back, defaultNormalCapacity) : defaultNormalCapacity;
-  const ivanCapacity = instanceCount === 2 ? toIvanCapacity(input.ivan_capacity, 4) : RESERVATION_REQUEST_IVAN_CAPACITY_PER_INSTANCE;
+  const normalCapacity = toRequestCapacity(
+    input.normal_capacity ?? input.normal_capacity_front,
+    RESERVATION_REQUEST_NORMAL_CAPACITY_PER_INSTANCE,
+  );
+  const ivanCapacity = toRequestCapacity(input.ivan_capacity, RESERVATION_REQUEST_IVAN_CAPACITY_PER_INSTANCE);
   if (errors.length) return { state, ok: false, errors };
   const existing = draft.reservation_settings.find((item) => String(item.event_date_id) === String(eventId));
   const before = existing ? clone(existing) : null;
@@ -903,9 +872,10 @@ export function upsertReservationSetting(state, input, now = new Date()) {
       event_date_id: eventId,
       created_at: stamp,
     }),
-    instance_count: instanceCount,
-    normal_capacity_front: normalCapacityFront,
-    normal_capacity_back: normalCapacityBack,
+    instance_count: 1,
+    normal_capacity: normalCapacity,
+    normal_capacity_front: normalCapacity,
+    normal_capacity_back: normalCapacity,
     ivan_capacity: ivanCapacity,
     updated_at: stamp,
   };
@@ -942,11 +912,6 @@ export function normalizeReservationRequest(state, input) {
     attribute: RESERVATION_ATTRIBUTE,
     ivan_name: (input.ivan_name || "").trim(),
     ivan_attribute: IVAN_ATTRIBUTES.includes(input.ivan_attribute) ? input.ivan_attribute : IVAN_ATTRIBUTE,
-    purple_count: toCount(input.purple_count),
-    red_count: toCount(input.red_count),
-    blue_count: toCount(input.blue_count),
-    green_count: toCount(input.green_count),
-    tower_count: toCount(input.tower_count) > 0 ? 1 : 0,
     memo: input.memo || "",
   };
 }
@@ -957,11 +922,6 @@ export function isReservationRequestFilled(request) {
     request.host_user_id ||
     request.princess_name ||
     request.ivan_name ||
-    request.purple_count ||
-    request.red_count ||
-    request.blue_count ||
-    request.green_count ||
-    request.tower_count ||
     request.memo
   );
 }
@@ -1065,7 +1025,6 @@ export function getReservationRequestBuckets(state, eventId) {
   const result = {
     [TIME_SLOTS[0]]: createReservationRequestBucket(state, eventId, TIME_SLOTS[0]),
     [TIME_SLOTS[1]]: createReservationRequestBucket(state, eventId, TIME_SLOTS[1]),
-    flexible: [],
   };
   for (const request of getReservationRequestsForEvent(state, eventId)) {
     const bucket = result[request.desired_time_slot] || result[TIME_SLOTS[0]];
@@ -1118,89 +1077,6 @@ export function isReservationRequestIvan(request) {
   return Boolean((request?.ivan_name || "").trim());
 }
 
-export function getDrinkPlansForEvent(state, eventId, includeDeleted = false) {
-  return (state.drink_plans || []).filter((plan) => {
-    return String(plan.event_date_id) === String(eventId) && (includeDeleted || !plan.is_deleted);
-  });
-}
-
-export function normalizeDrinkPlan(input) {
-  const validType = DRINK_PLAN_TYPES.some((item) => item.key === input.item_type);
-  return {
-    id: input.id || null,
-    event_date_id: input.event_date_id,
-    time_slot: TIME_SLOTS.includes(input.time_slot) ? input.time_slot : TIME_SLOTS[0],
-    host_user_id: input.host_user_id || "",
-    item_type: validType ? input.item_type : "tower",
-    count: Math.max(1, toCount(input.count) || 1),
-    memo: input.memo || "",
-  };
-}
-
-export function isDrinkPlanFilled(plan) {
-  return Boolean(plan?.event_date_id && plan?.host_user_id && plan?.item_type && toCount(plan?.count) > 0);
-}
-
-export function upsertDrinkPlan(state, input, now = new Date()) {
-  const draft = clone(state);
-  draft.drink_plans ||= [];
-  const payload = normalizeDrinkPlan(input);
-  const stamp = new Date(now).toISOString();
-  const event = findEvent(draft, payload.event_date_id);
-  const errors = [];
-  if (!event) errors.push("イベント日が見つかりません。");
-  if (event && event.status === "休み") errors.push("休み日は事前申請の対象外です。");
-  if (!payload.host_user_id) errors.push("担当を選択してください。");
-  if (payload.host_user_id && findStaffMember(draft, payload.host_user_id)) {
-    errors.push("内勤は予約担当にできません。ホストを選択してください。");
-  }
-  if (!isDrinkPlanFilled(payload)) errors.push("予定内容を入力してください。");
-  if (errors.length) return { state, ok: false, errors };
-
-  const existing = payload.id ? draft.drink_plans.find((plan) => String(plan.id) === String(payload.id) && !plan.is_deleted) : null;
-  const before = existing ? clone(existing) : null;
-  const planId = existing?.id || payload.id || createId("plan");
-  const after = {
-    ...(existing || {
-      event_date_id: payload.event_date_id,
-      created_at: stamp,
-      deleted_at: null,
-      is_deleted: false,
-    }),
-    ...payload,
-    id: planId,
-    updated_at: stamp,
-  };
-  if (existing) Object.assign(existing, after);
-  else draft.drink_plans.push(after);
-  pushHistory(draft, "drink_plan", after.id, before, after, stamp, before ? "事前申請を編集" : "事前申請を登録");
-  touch(draft, stamp);
-  return { state: draft, ok: true, plan: after, errors: [] };
-}
-
-export function deleteDrinkPlan(state, planId, now = new Date()) {
-  const draft = clone(state);
-  draft.drink_plans ||= [];
-  const stamp = new Date(now).toISOString();
-  const plan = draft.drink_plans.find((item) => String(item.id) === String(planId) && !item.is_deleted);
-  if (!plan) return { state, ok: false, errors: ["削除対象の事前申請が見つかりません。"] };
-  const before = clone(plan);
-  plan.is_deleted = true;
-  plan.deleted_at = stamp;
-  plan.updated_at = stamp;
-  pushHistory(draft, "drink_plan", plan.id, before, clone(plan), stamp, "事前申請を削除");
-  touch(draft, stamp);
-  return { state: draft, ok: true, errors: [] };
-}
-
-export function getDrinkPlanTotals(state, eventId) {
-  const totals = { tower: 0, purple: 0, red: 0, blue: 0, green: 0 };
-  for (const plan of getDrinkPlansForEvent(state, eventId)) {
-    totals[plan.item_type] = (totals[plan.item_type] || 0) + toCount(plan.count);
-  }
-  return totals;
-}
-
 function isMeaningfulReservationChange(before, after) {
   if (!before) return true;
   const keys = ["time_slot", "seat_type", "group_no", "host_user_id", "princess_name", "attribute", "ivan_name", "ivan_attribute"];
@@ -1246,38 +1122,10 @@ export function getSeatCounts(state, eventId) {
   return counts;
 }
 
-export function getDrinkTotals(state, eventId) {
-  const totals = { tower: 0, purple: 0, red: 0, blue: 0, green: 0 };
-  for (const reservation of getReservationsForEvent(state, eventId)) {
-    addDrinkCounts(totals, reservation);
-  }
-  for (const request of getAcceptedReservationRequestsForEvent(state, eventId)) {
-    addDrinkCounts(totals, request);
-  }
-  return totals;
-}
-
-function addDrinkCounts(totals, source) {
-  totals.tower += toCount(source.tower_count);
-  totals.purple += toCount(source.purple_count);
-  totals.red += toCount(source.red_count);
-  totals.blue += toCount(source.blue_count);
-  totals.green += toCount(source.green_count);
-}
-
 export function getLimitStatus(total, limit) {
   if (total > limit) return { level: "over", text: `上限超過 +${total - limit}` };
   if (total === limit) return { level: "full", text: "上限到達" };
   return { level: "ok", text: `残り${limit - total}` };
-}
-
-export function getDrinkLimitStatuses(state, eventId) {
-  const totals = getDrinkTotals(state, eventId);
-  const statuses = {};
-  for (const [key, item] of Object.entries(DRINK_LIMITS)) {
-    statuses[key] = { ...item, total: totals[key], ...getLimitStatus(totals[key], item.limit) };
-  }
-  return statuses;
 }
 
 export function getSeatLimitStatuses(state, eventId) {
@@ -1310,10 +1158,6 @@ export function getReservationWarnings(state, reservation) {
     }
   }
   if (wasReservationChangedAfterEventCutoff(event, reservation)) warnings.push("17時以降の追加・交代です");
-  const drinks = getDrinkLimitStatuses(state, reservation.event_date_id);
-  for (const item of Object.values(drinks)) {
-    if (item.level === "over") warnings.push(`${item.label}上限超過`);
-  }
   return warnings;
 }
 
@@ -1328,12 +1172,6 @@ export function getDashboardIssues(state, eventId) {
   for (const [key, item] of Object.entries(seats)) {
     if (item.level === "full") issues.push({ level: "warn", text: `${key.replace(":", " ")} 上限到達` });
     if (item.level === "over") issues.push({ level: "danger", text: `${key.replace(":", " ")} 上限超過` });
-  }
-
-  const drinks = getDrinkLimitStatuses(state, eventId);
-  for (const item of Object.values(drinks)) {
-    if (item.level === "full") issues.push({ level: "warn", text: `${item.label} 上限到達` });
-    if (item.level === "over") issues.push({ level: "danger", text: `${item.label} 上限超過` });
   }
 
   const warningCounts = new Map();
