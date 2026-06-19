@@ -333,19 +333,57 @@ function loadState() {
 
 function migrateState(saved) {
   const fresh = buildDefaultState();
+  const allowedEventIds = getConfiguredEventIdSet(fresh.event_dates);
+  const savedEvents = filterItemsByAllowedEvents(saved.event_dates || [], allowedEventIds, eventIdFromEventDate);
+  const migratedEventDates = migrateEventDates(savedEvents, fresh.event_dates);
+  const sourceEvents = migratedEventDates.length ? migratedEventDates : fresh.event_dates;
+  const reservations = filterItemsByAllowedEvents(saved.reservations || [], allowedEventIds);
+  const reservationRequests = filterItemsByAllowedEvents(saved.reservation_requests || [], allowedEventIds);
   return {
     ...fresh,
     ...saved,
-    event_dates: migrateEventDates(saved.event_dates || [], fresh.event_dates),
-    reservations: migrateReservations(saved.reservations || [], saved.event_dates || fresh.event_dates),
+    event_dates: migratedEventDates,
+    attendance_entries: filterItemsByAllowedEvents(saved.attendance_entries || [], allowedEventIds),
+    reservations: migrateReservations(reservations, sourceEvents),
     roles: saved.roles || fresh.roles,
     staff_members: saved.staff_members || [],
-    staff_attendance_entries: saved.staff_attendance_entries || [],
-    reservation_settings: saved.reservation_settings || [],
-    reservation_requests: migrateReservationRequests(saved.reservation_requests || []),
+    staff_attendance_entries: filterItemsByAllowedEvents(saved.staff_attendance_entries || [], allowedEventIds),
+    reservation_settings: filterItemsByAllowedEvents(saved.reservation_settings || [], allowedEventIds),
+    reservation_requests: migrateReservationRequests(reservationRequests),
+    histories: filterHistoriesByAllowedEvents(saved.histories || [], allowedEventIds),
     settings: { ...fresh.settings, ...(saved.settings || {}) },
     meta: { ...fresh.meta, ...(saved.meta || {}) },
   };
+}
+
+function getConfiguredEventIdSet(defaultEvents) {
+  if (!hasConfiguredEventSchedule()) return null;
+  return new Set((defaultEvents || []).map(eventIdFromEventDate).filter(Boolean));
+}
+
+function hasConfiguredEventSchedule() {
+  return Array.isArray(activeStore?.core?.eventDates) && activeStore.core.eventDates.length > 0;
+}
+
+function eventIdFromEventDate(event) {
+  if (!event) return "";
+  if (event.id) return String(event.id);
+  if (event.event_date) return `ev_${String(event.event_date).replaceAll("-", "")}`;
+  return "";
+}
+
+function filterItemsByAllowedEvents(items, allowedEventIds, getEventId = (item) => item?.event_date_id || item?.event_id || item?.id) {
+  if (!allowedEventIds) return items;
+  return (items || []).filter((item) => allowedEventIds.has(String(getEventId(item) || "")));
+}
+
+function filterHistoriesByAllowedEvents(histories, allowedEventIds) {
+  if (!allowedEventIds) return histories;
+  return (histories || []).filter((history) => {
+    const payload = history?.after_payload || history?.before_payload || {};
+    const eventId = payload.event_date_id || (history?.target_type === "event" ? history.target_id : "");
+    return !eventId || allowedEventIds.has(String(eventId));
+  });
 }
 
 function migrateReservations(reservations, events) {
@@ -379,11 +417,33 @@ function migrateReservationRequests(requests) {
 
 function migrateEventDates(events, generatedEvents = []) {
   const merged = new Map();
+  const configuredEvents = getConfiguredEventIdSet(generatedEvents);
+  const generatedById = new Map();
   for (const event of generatedEvents) {
-    if (event?.id || event?.event_date) merged.set(event.id || event.event_date, { ...event });
+    const key = eventIdFromEventDate(event) || event?.event_date;
+    if (!key) continue;
+    const copy = { ...event };
+    generatedById.set(String(key), copy);
+    merged.set(String(key), copy);
   }
   for (const event of events) {
-    if (event?.id || event?.event_date) merged.set(event.id || event.event_date, { ...event });
+    const key = eventIdFromEventDate(event) || event?.event_date;
+    if (!key || (configuredEvents && !configuredEvents.has(String(key)))) continue;
+    if (configuredEvents) {
+      const generated = generatedById.get(String(key));
+      merged.set(String(key), {
+        ...generated,
+        ...event,
+        id: generated?.id || event.id,
+        event_date: generated?.event_date || event.event_date,
+        label: generated?.label || event.label,
+        status: generated?.status === "終了" || generated?.status === "休み" ? generated.status : event.status,
+        note: generated?.note || event.note,
+        reservation_open_at: generated?.reservation_open_at || event.reservation_open_at,
+      });
+      continue;
+    }
+    merged.set(String(key), { ...event });
   }
   return [...merged.values()].map((event) => {
     if (!event.event_date) return event;
@@ -442,12 +502,12 @@ async function initializeSharedState(expectedVersion = storeContextVersion) {
   if (syncStatus.mode !== "supabase") return;
   try {
     const hasPendingLocalChanges = localStorage.getItem(PENDING_LOCAL_CHANGES_KEY) === "1";
-    const localState = hasStoredLocalState && hasPendingLocalChanges ? state : null;
+    const localState = hasStoredLocalState && hasPendingLocalChanges ? migrateState(state) : null;
     const record = await loadSharedRecord();
     if (expectedVersion !== storeContextVersion) return;
     if (record.state) {
       const migratedRemoteState = migrateState(record.state);
-      const mergedState = localState ? mergeSharedState(migratedRemoteState, localState) : migratedRemoteState;
+      const mergedState = localState ? migrateState(mergeSharedState(migratedRemoteState, localState)) : migratedRemoteState;
       if (expectedVersion !== storeContextVersion) return;
       state = mergedState;
       let shouldSaveMigratedState = hasPersistableMigration(record.state, migratedRemoteState) || hasPersistableMerge(migratedRemoteState, mergedState);
@@ -476,7 +536,15 @@ async function initializeSharedState(expectedVersion = storeContextVersion) {
 }
 
 function hasPersistableMigration(before, after) {
-  return ["event_dates", "reservations", "reservation_settings", "reservation_requests"].some((key) => {
+  return [
+    "event_dates",
+    "attendance_entries",
+    "staff_attendance_entries",
+    "reservations",
+    "reservation_settings",
+    "reservation_requests",
+    "histories",
+  ].some((key) => {
     return JSON.stringify(before[key] || []) !== JSON.stringify(after[key] || []);
   });
 }
@@ -493,6 +561,7 @@ function hasPersistableMerge(before, after) {
     "reservations",
     "reservation_settings",
     "reservation_requests",
+    "histories",
   ].some((key) => {
     return JSON.stringify(before[key] || []) !== JSON.stringify(after[key] || []);
   });
@@ -528,6 +597,7 @@ async function loadSharedRecord() {
 async function saveSharedState(nextState, options = {}) {
   if (syncStatus.mode !== "supabase") return;
   if (options.expectedUpdatedAt) return saveSharedStateIfUnchanged(nextState, options.expectedUpdatedAt);
+  const stateToSave = migrateState(nextState);
   const url = `${APP_CONFIG.supabaseUrl.replace(/\/$/, "")}/rest/v1/app_state`;
   const response = await fetch(url, {
     method: "POST",
@@ -538,7 +608,7 @@ async function saveSharedState(nextState, options = {}) {
     },
     body: JSON.stringify({
       id: STATE_ROW_ID,
-      payload: nextState,
+      payload: stateToSave,
       updated_at: new Date().toISOString(),
     }),
   });
@@ -546,6 +616,7 @@ async function saveSharedState(nextState, options = {}) {
 }
 
 async function saveSharedStateIfUnchanged(nextState, expectedUpdatedAt) {
+  const stateToSave = migrateState(nextState);
   const rowId = STATE_ROW_ID;
   const url = `${APP_CONFIG.supabaseUrl.replace(/\/$/, "")}/rest/v1/app_state?id=eq.${encodeURIComponent(
     rowId,
@@ -558,7 +629,7 @@ async function saveSharedStateIfUnchanged(nextState, expectedUpdatedAt) {
       Prefer: "return=representation",
     },
     body: JSON.stringify({
-      payload: nextState,
+      payload: stateToSave,
       updated_at: new Date().toISOString(),
     }),
   });
@@ -572,7 +643,7 @@ async function saveSharedStateIfUnchanged(nextState, expectedUpdatedAt) {
 }
 
 async function saveSharedStateWithRetry(nextState, expectedUpdatedAt = "") {
-  let stateToSave = nextState;
+  let stateToSave = migrateState(nextState);
   let expected = expectedUpdatedAt;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
@@ -582,7 +653,7 @@ async function saveSharedStateWithRetry(nextState, expectedUpdatedAt = "") {
       if (error.code !== "STALE_SHARED_STATE") throw error;
       const record = await loadSharedRecord();
       const latestState = record.state ? migrateState(record.state) : null;
-      stateToSave = latestState ? mergeSharedState(latestState, stateToSave) : stateToSave;
+      stateToSave = latestState ? migrateState(mergeSharedState(latestState, stateToSave)) : migrateState(stateToSave);
       expected = record.updatedAt;
     }
   }
@@ -598,7 +669,7 @@ function getSupabaseHeaders() {
 }
 
 function saveState(nextState, message = "保存しました。") {
-  state = nextState;
+  state = migrateState(nextState);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   if (syncStatus.mode === "supabase") {
     localStorage.setItem(PENDING_LOCAL_CHANGES_KEY, "1");
@@ -619,10 +690,11 @@ function saveState(nextState, message = "保存しました。") {
 }
 
 async function saveMergedSharedState(localState) {
+  const normalizedLocalState = migrateState(localState);
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const record = await loadSharedRecord();
     const migratedRemoteState = record.state ? migrateState(record.state) : null;
-    const mergedState = migratedRemoteState ? mergeSharedState(migratedRemoteState, localState) : localState;
+    const mergedState = migratedRemoteState ? migrateState(mergeSharedState(migratedRemoteState, normalizedLocalState)) : normalizedLocalState;
     try {
       await saveSharedState(mergedState, record.updatedAt ? { expectedUpdatedAt: record.updatedAt } : {});
       state = mergedState;
@@ -634,7 +706,7 @@ async function saveMergedSharedState(localState) {
     }
   }
   const record = await loadSharedRecord();
-  state = record.state ? mergeSharedState(migrateState(record.state), localState) : localState;
+  state = record.state ? migrateState(mergeSharedState(migrateState(record.state), normalizedLocalState)) : normalizedLocalState;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   throw new Error("STALE_SHARED_STATE");
 }
@@ -1824,24 +1896,30 @@ function renderVacationManagement() {
 
 function renderEventManagement() {
   const editing = view.editingEventId ? findEvent(state, view.editingEventId) : null;
+  const fixedSchedule = hasConfiguredEventSchedule();
   const activeEvents = state.event_dates.filter((event) => !isEventArchived(event));
   const archivedCount = getArchivedEvents(state).length;
   const newDate = getNextConfiguredEventDate();
   const eventDate = editing?.event_date || newDate;
+  const eventForm = fixedSchedule && !editing
+    ? `<div class="notice muted">この店舗の日程は設定で固定されています。追加や日付変更はできません。変更が必要な場合は、一覧の「編集」からステータスだけ更新してください。</div>`
+    : `
+      <form class="form-grid" data-action="save-event">
+        <input type="hidden" name="id" value="${editing?.id || ""}">
+        <label><span>イベント日</span><input name="event_date" type="date" value="${eventDate}" data-role="event-date-input" ${fixedSchedule ? "readonly" : ""} required></label>
+        <label><span>ステータス</span><select name="status">${EVENT_STATUSES.map((status) => option(status, status, status === (editing?.status || "受付中"))).join("")}</select></label>
+        <label><span>予約解放日時</span><input name="reservation_open_at" type="datetime-local" value="${editing?.reservation_open_at || getReservationOpenAt(eventDate)}" data-role="reservation-open-input" ${fixedSchedule ? "readonly" : ""}></label>
+        <label class="span-2"><span>メモ</span><input name="note" value="${escapeAttr(editing?.note || "")}" ${fixedSchedule ? "readonly" : ""}></label>
+        <button class="primary-button" type="submit">${editing ? (fixedSchedule ? "ステータスを更新する" : "更新する") : "追加する"}</button>
+      </form>
+    `;
   return `
     <section class="panel page-panel">
       <div class="panel-heading">
         <div><p class="eyebrow">Events</p><h2>イベント日管理</h2></div>
         ${editing ? `<button class="ghost-button" data-action="new-event" type="button">新規追加に戻る</button>` : ""}
       </div>
-      <form class="form-grid" data-action="save-event">
-        <input type="hidden" name="id" value="${editing?.id || ""}">
-        <label><span>イベント日</span><input name="event_date" type="date" value="${eventDate}" data-role="event-date-input" required></label>
-        <label><span>ステータス</span><select name="status">${EVENT_STATUSES.map((status) => option(status, status, status === (editing?.status || "受付中"))).join("")}</select></label>
-        <label><span>予約解放日時</span><input name="reservation_open_at" type="datetime-local" value="${editing?.reservation_open_at || getReservationOpenAt(eventDate)}" data-role="reservation-open-input"></label>
-        <label class="span-2"><span>メモ</span><input name="note" value="${escapeAttr(editing?.note || "")}"></label>
-        <button class="primary-button" type="submit">${editing ? "更新する" : "追加する"}</button>
-      </form>
+      ${eventForm}
       <div class="notice muted">終了した日付は自動でアーカイブに移動します。過去の予約は「アーカイブ」タブから確認できます。現在のアーカイブ: ${archivedCount}件</div>
       <div class="table-wrap">
         <table class="data-table">
@@ -2664,7 +2742,20 @@ function handleSubmit(event) {
     applyResult(result, "長期休暇を保存しました。");
   }
   if (action === "save-event") {
-    const result = upsertEvent(state, data);
+    const existing = data.id ? findEvent(state, data.id) : null;
+    if (hasConfiguredEventSchedule() && !existing) {
+      showToast("固定日程のためイベント日は追加できません。", "error");
+      return;
+    }
+    const payload = hasConfiguredEventSchedule()
+      ? {
+        ...data,
+        event_date: existing.event_date,
+        reservation_open_at: existing.reservation_open_at,
+        note: existing.note || "",
+      }
+      : data;
+    const result = upsertEvent(state, payload);
     if (result.ok) {
       view.editingEventId = "";
       view.eventId = result.event.id;
@@ -2837,7 +2928,7 @@ async function saveReservationFromRow(button) {
 async function saveReservationToSharedState(payload, adminMode) {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const record = await loadSharedRecord();
-    const latestState = record.state ? migrateState(record.state) : state;
+    const latestState = record.state ? migrateState(record.state) : migrateState(state);
     const conflict = getReservationSaveConflict(latestState, payload);
     if (conflict) {
       state = latestState;
@@ -2851,16 +2942,17 @@ async function saveReservationToSharedState(payload, adminMode) {
     }
     const result = upsertReservation(latestState, payload, { admin: adminMode, strictDuplicate: true });
     if (!result.ok) return result;
+    const normalizedResultState = migrateState(result.state);
     try {
-      await saveSharedState(result.state, { expectedUpdatedAt: record.updatedAt });
-      return result;
+      await saveSharedState(normalizedResultState, { expectedUpdatedAt: record.updatedAt });
+      return { ...result, state: normalizedResultState };
     } catch (error) {
       if (error.code === "STALE_SHARED_STATE") continue;
       throw error;
     }
   }
   const record = await loadSharedRecord();
-  const latestState = record.state ? migrateState(record.state) : state;
+  const latestState = record.state ? migrateState(record.state) : migrateState(state);
   state = latestState;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   render();
@@ -3001,10 +3093,10 @@ async function syncSharedStateNow() {
   syncStatus = { mode: "supabase", text: "共有DBと再同期中" };
   render();
   try {
-    const localState = state;
+    const localState = migrateState(state);
     const record = await loadSharedRecord();
     const remoteState = record.state ? migrateState(record.state) : null;
-    const mergedState = remoteState ? mergeSharedState(remoteState, localState) : localState;
+    const mergedState = remoteState ? migrateState(mergeSharedState(remoteState, localState)) : localState;
     state = mergedState;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     await saveSharedStateWithRetry(state, record.updatedAt);

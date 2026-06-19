@@ -140,18 +140,34 @@ test("window config contains the EXCEED deployment identifiers and branding", as
   assert.equal(config.core.grandOpenDate, "2026-07-09");
   assert.equal(config.core.preOpenEventNote, "練習会&集団面談");
   assert.equal(config.core.grandOpenEventNote, "グランドオープン");
-  assert.equal(
-    JSON.stringify(config.core.eventDates.map((event) => [event.event_date, event.note])),
-    JSON.stringify([
-      ["2026-06-11", "練習会&集団面談"],
-      ["2026-06-18", "練習会&集団面談"],
-      ["2026-06-25", "練習会&集団面談"],
-      ["2026-07-09", "グランドオープン"],
-      ["2026-07-16", "営業日"],
-      ["2026-07-23", "営業日"],
-      ["2026-07-30", "営業日"],
-    ]),
-  );
+  assert.deepEqual(Array.from(config.core.eventDates, (event) => event.event_date), [
+    "2026-06-11",
+    "2026-06-18",
+    "2026-06-25",
+    "2026-07-09",
+    "2026-07-16",
+    "2026-07-23",
+    "2026-07-30",
+  ]);
+  assert.deepEqual(Array.from(config.core.eventDates, (event) => event.status || "受付中"), [
+    "終了",
+    "終了",
+    "受付中",
+    "受付中",
+    "受付中",
+    "受付中",
+    "受付中",
+  ]);
+  assert.deepEqual(Array.from(config.core.eventDates, (event) => event.note), [
+    "練習会&集団面談",
+    "練習会&集団面談",
+    "練習会&集団面談",
+    "グランドオープン",
+    "営業日",
+    "営業日",
+    "営業日",
+  ]);
+  assert.ok(!config.core.eventDates.some((event) => event.event_date === "2026-07-02" || event.event_date.startsWith("2026-08")));
 });
 
 test("Supabase schema includes every store state row ID", async () => {
