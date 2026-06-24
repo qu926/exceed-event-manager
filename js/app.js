@@ -365,7 +365,7 @@ function getAllowedEventIdSet(savedEvents, defaultEvents) {
   const allowedEventIds = getConfiguredEventIdSet(defaultEvents);
   if (!allowedEventIds) return null;
   for (const event of savedEvents || []) {
-    if (event?.is_custom) {
+    if (event?.is_custom && !isLegacyStaleEvent(event)) {
       const eventId = eventIdFromEventDate(event);
       if (eventId) allowedEventIds.add(eventId);
     }
@@ -376,6 +376,11 @@ function getAllowedEventIdSet(savedEvents, defaultEvents) {
 function isConfiguredEvent(event) {
   if (!event || !hasConfiguredEventSchedule()) return false;
   return getConfiguredEventIdSet(buildDefaultState().event_dates)?.has(eventIdFromEventDate(event)) || false;
+}
+
+function isLegacyStaleEvent(event) {
+  if (!event || !hasConfiguredEventSchedule()) return false;
+  return event.event_date === "2026-07-02" && String(event.note || "") === String(activeStore?.core?.grandOpenEventNote || "");
 }
 
 function hasConfiguredEventSchedule() {
@@ -455,8 +460,9 @@ function migrateEventDates(events, generatedEvents = []) {
         event_date: generated?.event_date || event.event_date,
         label: generated?.label || event.label,
         status: generated?.status === "終了" || generated?.status === "休み" ? generated.status : event.status,
-        note: generated?.note || event.note,
+        note: event.note ?? generated?.note ?? "",
         reservation_open_at: generated?.reservation_open_at || event.reservation_open_at,
+        is_custom: generated ? false : Boolean(event.is_custom),
       });
       continue;
     }
@@ -1925,7 +1931,7 @@ function renderEventManagement() {
         <label><span>イベント日</span><input name="event_date" type="date" value="${eventDate}" data-role="event-date-input" ${editingConfiguredEvent ? "readonly" : ""} required></label>
         <label><span>ステータス</span><select name="status">${EVENT_STATUSES.map((status) => option(status, status, status === (editing?.status || "受付中"))).join("")}</select></label>
         <label><span>予約解放日時</span><input name="reservation_open_at" type="datetime-local" value="${editing?.reservation_open_at || getReservationOpenAt(eventDate)}" data-role="reservation-open-input" ${editingConfiguredEvent ? "readonly" : ""}></label>
-        <label class="span-2"><span>メモ</span><input name="note" value="${escapeAttr(editing?.note || "")}" ${editingConfiguredEvent ? "readonly" : ""}></label>
+        <label class="span-2"><span>メモ</span><input name="note" value="${escapeAttr(editing?.note || "")}"></label>
         <button class="primary-button" type="submit">${editing ? (editingConfiguredEvent ? "ステータスを更新する" : "更新する") : "追加する"}</button>
       </form>
     `;
@@ -1936,7 +1942,7 @@ function renderEventManagement() {
         ${editing ? `<button class="ghost-button" data-action="new-event" type="button">新規追加に戻る</button>` : ""}
       </div>
       ${eventForm}
-      ${fixedSchedule ? `<div class="notice muted">設定済みの日程は日付・予約解放・メモを固定しています。追加した日程は手動追加として同期され、古い自動生成日程とは区別して保持します。</div>` : ""}
+      ${fixedSchedule ? `<div class="notice muted">設定済みの日程は日付・予約解放を固定しています。メモは編集できます。追加した日程は手動追加として同期され、古い自動生成日程とは区別して保持します。</div>` : ""}
       <div class="notice muted">終了した日付は自動でアーカイブに移動します。過去の予約は「アーカイブ」タブから確認できます。現在のアーカイブ: ${archivedCount}件</div>
       <div class="table-wrap">
         <table class="data-table">
@@ -2766,7 +2772,6 @@ function handleSubmit(event) {
         ...data,
         event_date: existing.event_date,
         reservation_open_at: existing.reservation_open_at,
-        note: existing.note || "",
       }
       : {
         ...data,
