@@ -750,15 +750,17 @@ function getDefaultEventId() {
   return open?.id || activeEvents.find((event) => event.status !== "休み")?.id || activeEvents[0]?.id || "";
 }
 
-function getNextConfiguredEventDate(baseDate = new Date()) {
+function getNextConfiguredEventDate(baseDate = new Date(), events = state.event_dates) {
   const configuredWeekdays = Array.isArray(activeStore?.core?.eventWeekdays)
     ? activeStore.core.eventWeekdays.filter((day) => Number.isInteger(day) && day >= 0 && day <= 6)
     : [];
   const weekdays = configuredWeekdays.length ? configuredWeekdays : [baseDate.getDay()];
-  for (let offset = 1; offset <= 60; offset += 1) {
+  const existingDates = new Set((events || []).map((event) => event.event_date).filter(Boolean));
+  for (let offset = 1; offset <= 365; offset += 1) {
     const candidate = new Date(baseDate);
     candidate.setDate(candidate.getDate() + offset);
-    if (weekdays.includes(candidate.getDay())) return toLocalDateTimeString(candidate).slice(0, 10);
+    const candidateDate = toLocalDateTimeString(candidate).slice(0, 10);
+    if (weekdays.includes(candidate.getDay()) && !existingDates.has(candidateDate)) return candidateDate;
   }
   return toLocalDateTimeString(baseDate).slice(0, 10);
 }

@@ -286,6 +286,15 @@ test('configured event dates override weekly event generation', () => {
     }, new Date('2026-06-19T12:00:00+09:00'));
     assert.equal(added.ok, true);
     assert.equal(added.event.is_custom, true);
+
+    const duplicate = upsertEvent(state, {
+      event_date: '2026-06-25',
+      status: EVENT_STATUSES[0],
+      note: '重複日',
+      is_custom: true,
+    }, new Date('2026-06-19T12:00:00+09:00'));
+    assert.equal(duplicate.ok, false);
+    assert.match(duplicate.errors[0], /既に登録/);
   } finally {
     configureCore();
   }

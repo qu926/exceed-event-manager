@@ -1376,6 +1376,9 @@ export function upsertEvent(state, input, now = new Date()) {
   const existing = input.id ? draft.event_dates.find((event) => event.id === input.id) : null;
   const before = existing ? clone(existing) : null;
   const eventDate = input.event_date;
+  if (!eventDate) return { state, ok: false, errors: ["イベント日を入力してください。"] };
+  const duplicate = draft.event_dates.find((event) => event.event_date === eventDate && event.id !== existing?.id);
+  if (duplicate) return { state, ok: false, errors: ["このイベント日は既に登録されています。編集ボタンから変更してください。"] };
   const after = {
     ...(existing || { id: `ev_${eventDate.replaceAll("-", "")}`, created_at: stamp }),
     event_date: eventDate,
@@ -1386,7 +1389,6 @@ export function upsertEvent(state, input, now = new Date()) {
     is_custom: Boolean(input.is_custom || existing?.is_custom),
     updated_at: stamp,
   };
-  if (!after.event_date) return { state, ok: false, errors: ["イベント日を入力してください。"] };
   if (existing) Object.assign(existing, after);
   else draft.event_dates.push(after);
   draft.event_dates.sort((a, b) => a.event_date.localeCompare(b.event_date));
