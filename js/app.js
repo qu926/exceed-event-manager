@@ -156,6 +156,7 @@ const ADMIN_TABS = new Set([
   "data",
 ]);
 const RESERVATION_TABS = new Set(["requests"]);
+const LEGACY_STALE_EVENT_CUTOFF_AT = Date.parse("2026-06-24T15:00:00.000Z");
 
 let hasStoredLocalState = false;
 let state = loadState();
@@ -380,7 +381,10 @@ function isConfiguredEvent(event) {
 
 function isLegacyStaleEvent(event) {
   if (!event || !hasConfiguredEventSchedule()) return false;
-  return event.event_date === "2026-07-02" && String(event.note || "") === String(activeStore?.core?.grandOpenEventNote || "");
+  if (event.event_date !== "2026-07-02") return false;
+  if (String(event.note || "") !== String(activeStore?.core?.grandOpenEventNote || "")) return false;
+  const eventStamp = Date.parse(event.created_at || event.updated_at || "");
+  return !eventStamp || eventStamp < LEGACY_STALE_EVENT_CUTOFF_AT;
 }
 
 function hasConfiguredEventSchedule() {
