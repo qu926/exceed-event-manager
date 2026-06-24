@@ -1383,6 +1383,7 @@ export function upsertEvent(state, input, now = new Date()) {
     status: EVENT_STATUSES.includes(input.status) ? input.status : "受付中",
     reservation_open_at: input.reservation_open_at || getReservationOpenAt(eventDate),
     note: input.note || "",
+    is_custom: Boolean(input.is_custom || existing?.is_custom),
     updated_at: stamp,
   };
   if (!after.event_date) return { state, ok: false, errors: ["イベント日を入力してください。"] };

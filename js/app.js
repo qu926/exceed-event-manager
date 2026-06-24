@@ -333,7 +333,7 @@ function loadState() {
 
 function migrateState(saved) {
   const fresh = buildDefaultState();
-  const allowedEventIds = getConfiguredEventIdSet(fresh.event_dates);
+  const allowedEventIds = getAllowedEventIdSet(saved.event_dates || [], fresh.event_dates);
   const savedEvents = filterItemsByAllowedEvents(saved.event_dates || [], allowedEventIds, eventIdFromEventDate);
   const migratedEventDates = migrateEventDates(savedEvents, fresh.event_dates);
   const sourceEvents = migratedEventDates.length ? migratedEventDates : fresh.event_dates;
@@ -359,6 +359,23 @@ function migrateState(saved) {
 function getConfiguredEventIdSet(defaultEvents) {
   if (!hasConfiguredEventSchedule()) return null;
   return new Set((defaultEvents || []).map(eventIdFromEventDate).filter(Boolean));
+}
+
+function getAllowedEventIdSet(savedEvents, defaultEvents) {
+  const allowedEventIds = getConfiguredEventIdSet(defaultEvents);
+  if (!allowedEventIds) return null;
+  for (const event of savedEvents || []) {
+    if (event?.is_custom) {
+      const eventId = eventIdFromEventDate(event);
+      if (eventId) allowedEventIds.add(eventId);
+    }
+  }
+  return allowedEventIds;
+}
+
+function isConfiguredEvent(event) {
+  if (!event || !hasConfiguredEventSchedule()) return false;
+  return getConfiguredEventIdSet(buildDefaultState().event_dates)?.has(eventIdFromEventDate(event)) || false;
 }
 
 function hasConfiguredEventSchedule() {
@@ -428,7 +445,7 @@ function migrateEventDates(events, generatedEvents = []) {
   }
   for (const event of events) {
     const key = eventIdFromEventDate(event) || event?.event_date;
-    if (!key || (configuredEvents && !configuredEvents.has(String(key)))) continue;
+    if (!key) continue;
     if (configuredEvents) {
       const generated = generatedById.get(String(key));
       merged.set(String(key), {
@@ -1897,20 +1914,19 @@ function renderVacationManagement() {
 function renderEventManagement() {
   const editing = view.editingEventId ? findEvent(state, view.editingEventId) : null;
   const fixedSchedule = hasConfiguredEventSchedule();
+  const editingConfiguredEvent = isConfiguredEvent(editing);
   const activeEvents = state.event_dates.filter((event) => !isEventArchived(event));
   const archivedCount = getArchivedEvents(state).length;
   const newDate = getNextConfiguredEventDate();
   const eventDate = editing?.event_date || newDate;
-  const eventForm = fixedSchedule && !editing
-    ? `<div class="notice muted">この店舗の日程は設定で固定されています。追加や日付変更はできません。変更が必要な場合は、一覧の「編集」からステータスだけ更新してください。</div>`
-    : `
+  const eventForm = `
       <form class="form-grid" data-action="save-event">
         <input type="hidden" name="id" value="${editing?.id || ""}">
-        <label><span>イベント日</span><input name="event_date" type="date" value="${eventDate}" data-role="event-date-input" ${fixedSchedule ? "readonly" : ""} required></label>
+        <label><span>イベント日</span><input name="event_date" type="date" value="${eventDate}" data-role="event-date-input" ${editingConfiguredEvent ? "readonly" : ""} required></label>
         <label><span>ステータス</span><select name="status">${EVENT_STATUSES.map((status) => option(status, status, status === (editing?.status || "受付中"))).join("")}</select></label>
-        <label><span>予約解放日時</span><input name="reservation_open_at" type="datetime-local" value="${editing?.reservation_open_at || getReservationOpenAt(eventDate)}" data-role="reservation-open-input" ${fixedSchedule ? "readonly" : ""}></label>
-        <label class="span-2"><span>メモ</span><input name="note" value="${escapeAttr(editing?.note || "")}" ${fixedSchedule ? "readonly" : ""}></label>
-        <button class="primary-button" type="submit">${editing ? (fixedSchedule ? "ステータスを更新する" : "更新する") : "追加する"}</button>
+        <label><span>予約解放日時</span><input name="reservation_open_at" type="datetime-local" value="${editing?.reservation_open_at || getReservationOpenAt(eventDate)}" data-role="reservation-open-input" ${editingConfiguredEvent ? "readonly" : ""}></label>
+        <label class="span-2"><span>メモ</span><input name="note" value="${escapeAttr(editing?.note || "")}" ${editingConfiguredEvent ? "readonly" : ""}></label>
+        <button class="primary-button" type="submit">${editing ? (editingConfiguredEvent ? "ステータスを更新する" : "更新する") : "追加する"}</button>
       </form>
     `;
   return `
@@ -1920,6 +1936,7 @@ function renderEventManagement() {
         ${editing ? `<button class="ghost-button" data-action="new-event" type="button">新規追加に戻る</button>` : ""}
       </div>
       ${eventForm}
+      ${fixedSchedule ? `<div class="notice muted">設定済みの日程は日付・予約解放・メモを固定しています。追加した日程は手動追加として同期され、古い自動生成日程とは区別して保持します。</div>` : ""}
       <div class="notice muted">終了した日付は自動でアーカイブに移動します。過去の予約は「アーカイブ」タブから確認できます。現在のアーカイブ: ${archivedCount}件</div>
       <div class="table-wrap">
         <table class="data-table">
@@ -2743,18 +2760,18 @@ function handleSubmit(event) {
   }
   if (action === "save-event") {
     const existing = data.id ? findEvent(state, data.id) : null;
-    if (hasConfiguredEventSchedule() && !existing) {
-      showToast("固定日程のためイベント日は追加できません。", "error");
-      return;
-    }
-    const payload = hasConfiguredEventSchedule()
+    const editingConfiguredEvent = isConfiguredEvent(existing);
+    const payload = editingConfiguredEvent
       ? {
         ...data,
         event_date: existing.event_date,
         reservation_open_at: existing.reservation_open_at,
         note: existing.note || "",
       }
-      : data;
+      : {
+        ...data,
+        is_custom: hasConfiguredEventSchedule() || Boolean(existing?.is_custom),
+      };
     const result = upsertEvent(state, payload);
     if (result.ok) {
       view.editingEventId = "";

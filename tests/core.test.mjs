@@ -64,6 +64,7 @@ import {
   setUserActive,
   toLocalDateTimeString,
   upsertAttendance,
+  upsertEvent,
   upsertReservation,
   upsertReservationRequest,
   upsertReservationSetting,
@@ -275,6 +276,16 @@ test('configured event dates override weekly event generation', () => {
     assert.equal(state.event_dates.find((event) => event.event_date === '2026-06-11').status, EVENT_STATUSES[1]);
     assert.equal(state.event_dates.find((event) => event.event_date === '2026-07-09').note, 'グランドオープン');
     assert.equal(state.event_dates.find((event) => event.event_date === '2026-06-25').reservation_open_at, '2026-06-24T22:00');
+
+    const added = upsertEvent(state, {
+      event_date: '2026-08-06',
+      status: EVENT_STATUSES[0],
+      reservation_open_at: '2026-08-05T22:00',
+      note: '追加営業日',
+      is_custom: true,
+    }, new Date('2026-06-19T12:00:00+09:00'));
+    assert.equal(added.ok, true);
+    assert.equal(added.event.is_custom, true);
   } finally {
     configureCore();
   }
