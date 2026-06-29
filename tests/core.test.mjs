@@ -15,6 +15,7 @@ import {
   buildDefaultState,
   buildEventDates,
   configureCore,
+  deleteEvent,
   deleteReservation,
   deleteRole,
   findReservationBySlot,
@@ -208,6 +209,7 @@ test('core configuration drives passwords, initial data, event weekdays, open ti
     assert.deepEqual(state.settings, {
       sitePassword: 'members-only',
       adminPassword: 'operators-only',
+      deleted_event_ids: [],
     });
     assert.deepEqual(state.users.map((user) => ({
       id: user.id,
@@ -240,6 +242,7 @@ test('default core data is generic and contains no deployment-specific credentia
   assert.deepEqual(state.settings, {
     sitePassword: 'site-demo',
     adminPassword: 'admin-demo',
+    deleted_event_ids: [],
   });
   assert.ok(state.users.length >= 4);
   assert.ok(state.users.every((user) => /サンプル|ホスト\d/.test(user.display_name)));
@@ -298,6 +301,53 @@ test('configured event dates override weekly event generation', () => {
   } finally {
     configureCore();
   }
+});
+
+test('event deletion removes related records and can be restored by re-adding the date', () => {
+  let state = buildDefaultState(new Date(2026, 4, 15, 12));
+  const event = activeEvent(state);
+
+  const attended = upsertAttendance(
+    state,
+    {
+      event_date_id: event.id,
+      user_id: 'u_host_1',
+      status: ATTENDANCE_STATUSES[0],
+      memo: 'present',
+    },
+    new Date('2026-05-02T10:00:00+09:00'),
+  );
+  assert.equal(attended.ok, true);
+  state = attended.state;
+
+  const reserved = upsertReservation(
+    state,
+    reservationDraft(event.id),
+    { now: new Date('2026-05-01T12:00:00+09:00'), admin: false },
+  );
+  assert.equal(reserved.ok, true);
+  state = reserved.state;
+
+  const deleted = deleteEvent(state, event.id, new Date('2026-05-03T12:00:00+09:00'));
+  assert.equal(deleted.ok, true);
+  assert.equal(deleted.state.event_dates.some((item) => item.id === event.id), false);
+  assert.equal(deleted.state.settings.deleted_event_ids.includes(event.id), true);
+  assert.equal(getAttendanceEntriesForEvent(deleted.state, event.id).length, 0);
+  assert.equal(getReservationsForEvent(deleted.state, event.id, true).length, 0);
+
+  const restored = upsertEvent(
+    deleted.state,
+    {
+      event_date: event.event_date,
+      status: EVENT_STATUSES[0],
+      note: 'Restored',
+      is_custom: true,
+    },
+    new Date('2026-05-03T12:05:00+09:00'),
+  );
+  assert.equal(restored.ok, true);
+  assert.equal(restored.event.id, event.id);
+  assert.equal(restored.state.settings.deleted_event_ids.includes(event.id), false);
 });
 
 test('finished events are automatically archived and reservation sections prefer ivan seats first', () => {
@@ -928,48 +978,45 @@ test('reservation request acceptance enforces three hold slots per time slot for
   assert.equal(adminAttempt.ok, true);
 });
 
-test('reservation request prototype opens on Wednesday at 22:00 for hosts', () => {
+test('reservation request prototype is always open for hosts', () => {
   let state = buildDefaultState(new Date(2026, 4, 15, 12));
   const event = state.event_dates.find((item) => item.event_date === '2026-05-08');
   assert.equal(event.reservation_open_at, '2026-05-06T22:00');
   assert.equal(getReservationRequestOpenAt(event.event_date), '2026-05-06T22:00');
 
-  const beforeRequestOpen = upsertReservationRequest(
+  const earlyRequest = upsertReservationRequest(
     state,
-    reservationRequestDraft(event.id, { princess_name: 'Before request open' }),
+    reservationRequestDraft(event.id, { princess_name: 'Early request' }),
     { admin: false, now: '2026-05-06T21:59:59.999' },
   );
-  assert.equal(beforeRequestOpen.ok, false);
+  assert.equal(earlyRequest.ok, true);
+  state = earlyRequest.state;
 
   const atRequestOpen = upsertReservationRequest(
     state,
-    reservationRequestDraft(event.id, { princess_name: 'At request open' }),
+    reservationRequestDraft(event.id, {
+      host_user_id: 'u_host_2',
+      desired_time_slot: TIME_SLOTS[1],
+      princess_name: 'At request open',
+    }),
     { admin: false, now: '2026-05-06T22:00:00.000' },
   );
   assert.equal(atRequestOpen.ok, true);
   state = atRequestOpen.state;
-  assert.equal(getReservationRequestsForEvent(state, event.id).length, 1);
+  assert.equal(getReservationRequestsForEvent(state, event.id).length, 2);
 });
 
-test('reservation upsert opens only after the event gate, supports admin override, updates by slot, and soft deletes', () => {
+test('reservation upsert is always open, updates by slot, and soft deletes', () => {
   const state = buildDefaultState(new Date(2026, 4, 15, 12));
   const event = activeEvent(state);
   const original = deepClone(state);
   const beforeOpen = new Date(event.reservation_open_at);
   beforeOpen.setMinutes(beforeOpen.getMinutes() - 1);
 
-  const blocked = upsertReservation(
-    state,
-    reservationDraft(event.id),
-    { now: beforeOpen, admin: false },
-  );
-  assert.equal(blocked.ok, false);
-  assert.equal(blocked.state, state);
-
   const created = upsertReservation(
     state,
     reservationDraft(event.id),
-    { now: beforeOpen, admin: true },
+    { now: beforeOpen, admin: false },
   );
   assert.equal(created.ok, true);
   assert.deepEqual(state, original);
@@ -1046,20 +1093,20 @@ test('reservation summaries enforce active seat limits', () => {
   assert.ok(getDashboardIssues(state, event.id).some((issue) => issue.text.includes('通常席 上限到達')));
 });
 
-test('reservation open and same-day cutoff boundaries are deterministic', () => {
+test('reservation open is constant and same-day cutoff boundaries are deterministic', () => {
   const state = buildDefaultState(new Date(2026, 4, 15, 12));
   const event = activeEvent(state);
   const beforeOpen = new Date(event.reservation_open_at);
   beforeOpen.setMilliseconds(beforeOpen.getMilliseconds() - 1);
   const atOpen = new Date(event.reservation_open_at);
 
-  assert.equal(isReservationOpen(event, beforeOpen), false);
+  assert.equal(isReservationOpen(event, beforeOpen), true);
   assert.equal(isReservationOpen(event, atOpen), true);
 
   const requestOpenAt = new Date(getReservationRequestOpenAt(event.event_date));
   const beforeRequestOpen = new Date(requestOpenAt);
   beforeRequestOpen.setMilliseconds(beforeRequestOpen.getMilliseconds() - 1);
-  assert.equal(isReservationRequestOpen(event, beforeRequestOpen), false);
+  assert.equal(isReservationRequestOpen(event, beforeRequestOpen), true);
   assert.equal(isReservationRequestOpen(event, requestOpenAt), true);
 
   assert.equal(isAfterEventCutoff(event, new Date(`${event.event_date}T16:59:00`)), false);

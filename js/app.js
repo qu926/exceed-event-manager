@@ -16,6 +16,7 @@ import {
   clone,
   configureCore,
   createId,
+  deleteEvent,
   deleteReservation,
   deleteReservationRequest,
   deleteRole,
@@ -334,9 +335,14 @@ function loadState() {
 
 function migrateState(saved) {
   const fresh = buildDefaultState();
-  const allowedEventIds = getAllowedEventIdSet(saved.event_dates || [], fresh.event_dates);
+  const settings = {
+    ...fresh.settings,
+    ...(saved.settings || {}),
+    deleted_event_ids: normalizeDeletedEventIds(saved.settings?.deleted_event_ids),
+  };
+  const allowedEventIds = getAllowedEventIdSet(saved.event_dates || [], fresh.event_dates, settings.deleted_event_ids);
   const savedEvents = filterItemsByAllowedEvents(saved.event_dates || [], allowedEventIds, eventIdFromEventDate);
-  const migratedEventDates = migrateEventDates(savedEvents, fresh.event_dates);
+  const migratedEventDates = migrateEventDates(savedEvents, fresh.event_dates, settings.deleted_event_ids);
   const sourceEvents = migratedEventDates.length ? migratedEventDates : fresh.event_dates;
   const reservations = filterItemsByAllowedEvents(saved.reservations || [], allowedEventIds);
   const reservationRequests = filterItemsByAllowedEvents(saved.reservation_requests || [], allowedEventIds);
@@ -352,7 +358,7 @@ function migrateState(saved) {
     reservation_settings: filterItemsByAllowedEvents(saved.reservation_settings || [], allowedEventIds),
     reservation_requests: migrateReservationRequests(reservationRequests),
     histories: filterHistoriesByAllowedEvents(saved.histories || [], allowedEventIds),
-    settings: { ...fresh.settings, ...(saved.settings || {}) },
+    settings,
     meta: { ...fresh.meta, ...(saved.meta || {}) },
   };
 }
@@ -362,16 +368,21 @@ function getConfiguredEventIdSet(defaultEvents) {
   return new Set((defaultEvents || []).map(eventIdFromEventDate).filter(Boolean));
 }
 
-function getAllowedEventIdSet(savedEvents, defaultEvents) {
+function getAllowedEventIdSet(savedEvents, defaultEvents, deletedEventIds = []) {
   const allowedEventIds = getConfiguredEventIdSet(defaultEvents);
   if (!allowedEventIds) return null;
+  for (const eventId of deletedEventIds) allowedEventIds.delete(String(eventId));
   for (const event of savedEvents || []) {
     if (event?.is_custom && !isLegacyStaleEvent(event)) {
       const eventId = eventIdFromEventDate(event);
-      if (eventId) allowedEventIds.add(eventId);
+      if (eventId && !deletedEventIds.includes(eventId)) allowedEventIds.add(eventId);
     }
   }
   return allowedEventIds;
+}
+
+function normalizeDeletedEventIds(value) {
+  return [...new Set((Array.isArray(value) ? value : []).map(String).filter(Boolean))];
 }
 
 function isConfiguredEvent(event) {
@@ -441,20 +452,21 @@ function migrateReservationRequests(requests) {
   }));
 }
 
-function migrateEventDates(events, generatedEvents = []) {
+function migrateEventDates(events, generatedEvents = [], deletedEventIds = []) {
   const merged = new Map();
+  const deletedIds = new Set((deletedEventIds || []).map(String));
   const configuredEvents = getConfiguredEventIdSet(generatedEvents);
   const generatedById = new Map();
   for (const event of generatedEvents) {
     const key = eventIdFromEventDate(event) || event?.event_date;
-    if (!key) continue;
+    if (!key || deletedIds.has(String(key))) continue;
     const copy = { ...event };
     generatedById.set(String(key), copy);
     merged.set(String(key), copy);
   }
   for (const event of events) {
     const key = eventIdFromEventDate(event) || event?.event_date;
-    if (!key) continue;
+    if (!key || deletedIds.has(String(key))) continue;
     if (configuredEvents) {
       const generated = generatedById.get(String(key));
       merged.set(String(key), {
@@ -971,7 +983,7 @@ function renderBulkAttendanceRow(event) {
       <input type="hidden" name="attendance_event_id" value="${event.id}">
       <div class="bulk-date">
         <h3>${formatDateLabel(event.event_date)}</h3>
-        <span>${formatDateTime(event.reservation_open_at)} 解放</span>
+        <span>予約は常時受付</span>
       </div>
       <div class="bulk-status-options" role="radiogroup" aria-label="${formatDateLabel(event.event_date)} の出欠">
         ${ATTENDANCE_STATUSES.map((status) => `
@@ -1059,7 +1071,7 @@ function renderBulkStaffAttendanceRow(event) {
       <input type="hidden" name="attendance_event_id" value="${event.id}">
       <div class="bulk-date">
         <h3>${formatDateLabel(event.event_date)}</h3>
-        <span>${formatDateTime(event.reservation_open_at)} 解放</span>
+        <span>予約は常時受付</span>
       </div>
       <div class="bulk-status-options is-staff" role="radiogroup" aria-label="${formatDateLabel(event.event_date)} の内勤出勤">
         ${STAFF_ATTENDANCE_STATUSES.map((status) => `
@@ -1172,7 +1184,6 @@ function getStaffAttendanceListItems(status) {
 
 function renderReservationPage(adminMode) {
   const event = findEvent(state, view.eventId);
-  const requestLocked = event && !adminMode && !isReservationRequestOpen(event);
   const isHoliday = event?.status === "休み";
   view.reservationTab = "requests";
   return `
@@ -1191,7 +1202,7 @@ function renderReservationPage(adminMode) {
       </div>
       ${renderReservationRequestOpenNotice(event, adminMode)}
       ${isHoliday ? `<div class="notice muted">この日は休みです。勤怠・予約入力対象外です。</div>` : ""}
-      ${renderReservationRequestPrototype(event?.id || "", { adminMode, locked: Boolean(requestLocked || isHoliday) })}
+      ${renderReservationRequestPrototype(event?.id || "", { adminMode, locked: Boolean(isHoliday) })}
     </section>
   `;
 }
@@ -1199,14 +1210,7 @@ function renderReservationPage(adminMode) {
 function renderReservationRequestOpenNotice(event, adminMode) {
   if (!event) return "";
   if (event.status === EVENT_STATUSES[2]) return "";
-  const requestOpenAt = getReservationRequestOpenAt(event.event_date);
-  if (adminMode) {
-    return `<div class="notice">運営画面では受付方式（仮）の解放前でも代理入力できます。受付方式解放: ${formatDateTime(requestOpenAt)}</div>`;
-  }
-  if (isReservationRequestOpen(event)) {
-    return `<div class="notice success">受付方式（仮）は受付中です。解放日時: ${formatDateTime(requestOpenAt)}</div>`;
-  }
-  return `<div class="notice muted">受付方式（仮）は対象週の水曜22:00から開始されます。現在は閲覧のみ可能です。解放日時: ${formatDateTime(requestOpenAt)}</div>`;
+  return `<div class="notice success">予約受付は常時受付中です。</div>`;
 }
 
 function renderReservationRequestPrototype(eventId, { adminMode = false, locked = false } = {}) {
@@ -1936,7 +1940,6 @@ function renderEventManagement() {
         <input type="hidden" name="id" value="${editing?.id || ""}">
         <label><span>イベント日</span><input name="event_date" type="date" value="${eventDate}" data-role="event-date-input" ${editingConfiguredEvent ? "readonly" : ""} required></label>
         <label><span>ステータス</span><select name="status">${EVENT_STATUSES.map((status) => option(status, status, status === (editing?.status || "受付中"))).join("")}</select></label>
-        <label><span>予約解放日時</span><input name="reservation_open_at" type="datetime-local" value="${editing?.reservation_open_at || getReservationOpenAt(eventDate)}" data-role="reservation-open-input" ${editingConfiguredEvent ? "readonly" : ""}></label>
         <label class="span-2"><span>メモ</span><input name="note" value="${escapeAttr(editing?.note || "")}"></label>
         <button class="primary-button" type="submit">${editing ? (editingConfiguredEvent ? "ステータスを更新する" : "更新する") : "追加する"}</button>
       </form>
@@ -1948,21 +1951,25 @@ function renderEventManagement() {
         ${editing ? `<button class="ghost-button" data-action="new-event" type="button">新規追加に戻る</button>` : ""}
       </div>
       ${eventForm}
-      ${fixedSchedule ? `<div class="notice muted">設定済みの日程は日付・予約解放を固定しています。メモは編集できます。追加した日程は手動追加として同期され、古い自動生成日程とは区別して保持します。</div>` : ""}
+      ${fixedSchedule ? `<div class="notice muted">設定済みの日程は日付を固定しています。メモは編集できます。追加した日程は手動追加として同期され、古い自動生成日程とは区別して保持します。</div>` : ""}
       <div class="notice muted">終了した日付は自動でアーカイブに移動します。過去の予約は「アーカイブ」タブから確認できます。現在のアーカイブ: ${archivedCount}件</div>
       <div class="table-wrap">
         <table class="data-table">
-          <thead><tr><th>日付</th><th>ステータス</th><th>予約解放</th><th>メモ</th><th>操作</th></tr></thead>
+          <thead><tr><th>日付</th><th>ステータス</th><th>メモ</th><th>操作</th></tr></thead>
           <tbody>
             ${activeEvents.map((event) => `
               <tr class="${event.status === "休み" ? "holiday-row" : ""}">
                 <td>${formatDateLabel(event.event_date)}</td>
                 <td>${statusPill(event.status)}</td>
-                <td>${formatDateTime(event.reservation_open_at)}</td>
                 <td>${escapeHtml(event.note || "")}</td>
-                <td><button class="icon-button" data-action="edit-event" data-event-id="${event.id}" type="button">編集</button></td>
+                <td>
+                  <div class="row-actions">
+                    <button class="icon-button" data-action="edit-event" data-event-id="${event.id}" type="button">編集</button>
+                    <button class="icon-button danger" data-action="delete-event" data-event-id="${event.id}" type="button">削除</button>
+                  </div>
+                </td>
               </tr>
-            `).join("") || `<tr><td colspan="5">受付中または休み予定のイベント日はありません。</td></tr>`}
+            `).join("") || `<tr><td colspan="4">受付中または休み予定のイベント日はありません。</td></tr>`}
           </tbody>
         </table>
       </div>
@@ -1990,7 +1997,7 @@ function renderArchive() {
           <h2>アーカイブ</h2>
         </div>
       </div>
-      <div class="notice muted">終了したイベント日の予約を日付ごとに折りたたんで確認できます。ここでは編集せず、当日の最終予約と集計だけを見返します。</div>
+      <div class="notice muted">終了したイベント日の予約を日付ごとに確認できます。間違えて終了した日程は「受付中に戻す」で復帰できます。</div>
       <div class="archive-list">
         ${archivedEvents.map((event) => renderArchiveItem(event)).join("")}
       </div>
@@ -2014,6 +2021,11 @@ function renderArchiveItem(event) {
         <em>${totalDeleted ? `削除履歴 ${totalDeleted}件` : "削除履歴なし"}</em>
         ${statusPill(event.status)}
       </button>
+      <div class="row-actions archive-actions">
+        <button class="icon-button save" data-action="restore-event" data-event-id="${event.id}" type="button">受付中に戻す</button>
+        <button class="icon-button" data-action="edit-event" data-event-id="${event.id}" type="button">編集</button>
+        <button class="icon-button danger" data-action="delete-event" data-event-id="${event.id}" type="button">削除</button>
+      </div>
       ${isOpen ? `
         <div class="archive-body">
           <div class="split">
@@ -2633,11 +2645,20 @@ function handleClick(event) {
   }
   if (action === "edit-event") {
     view.editingEventId = button.dataset.eventId;
+    view.adminTab = "events";
     render();
   }
   if (action === "new-event") {
     view.editingEventId = "";
     render();
+  }
+  if (action === "restore-event") {
+    restoreEventFromButton(button);
+    return;
+  }
+  if (action === "delete-event") {
+    deleteEventFromButton(button);
+    return;
   }
   if (action === "copy-text") copyText(button.dataset.source);
   if (action === "export-json") exportJson();
@@ -2667,6 +2688,56 @@ function deleteRoleFromButton(button) {
   if (!window.confirm(message)) return;
   const result = deleteRole(state, roleName);
   applyResult(result, "タグを削除しました。");
+}
+
+function restoreEventFromButton(button) {
+  const event = findEvent(state, button.dataset.eventId);
+  if (!event) {
+    showToast("対象イベント日が見つかりません。", "error");
+    return;
+  }
+  const result = upsertEvent(state, {
+    ...event,
+    status: "受付中",
+    manual_unarchived_at: new Date().toISOString(),
+  });
+  if (result.ok) {
+    view.eventId = result.event.id;
+    view.archiveEventId = "";
+    view.adminTab = "events";
+  }
+  applyResult(result, "イベント日を受付中に戻しました。");
+}
+
+function deleteEventFromButton(button) {
+  const event = findEvent(state, button.dataset.eventId);
+  if (!event) {
+    showToast("対象イベント日が見つかりません。", "error");
+    return;
+  }
+  const relatedCount = getEventRelatedDataCount(event.id);
+  const detail = relatedCount
+    ? `この日付に紐づく勤怠・予約・予約受付など ${relatedCount}件も削除されます。`
+    : "この日付に紐づく入力データはありません。";
+  const ok = window.confirm(`${formatDateLabel(event.event_date)} を削除します。${detail} 続行しますか？`);
+  if (!ok) return;
+  const result = deleteEvent(state, event.id);
+  if (result.ok) {
+    if (view.eventId === event.id) view.eventId = result.state.event_dates.find((item) => !isEventArchived(item))?.id || "";
+    if (view.archiveEventId === event.id) view.archiveEventId = "";
+    if (view.editingEventId === event.id) view.editingEventId = "";
+  }
+  applyResult(result, "イベント日を削除しました。");
+}
+
+function getEventRelatedDataCount(eventId) {
+  return [
+    state.attendance_entries,
+    state.staff_attendance_entries,
+    state.reservations,
+    state.reservation_settings,
+    state.reservation_requests,
+  ].reduce((total, items) => total + (items || []).filter((item) => String(item.event_date_id) === String(eventId)).length, 0);
 }
 
 function disableStaffMemberFromButton(button) {
