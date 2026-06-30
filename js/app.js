@@ -1,5 +1,6 @@
 import {
   ATTENDANCE_STATUSES,
+  ATTRIBUTES,
   EVENT_STATUSES,
   IVAN_ATTRIBUTE,
   IVAN_ATTRIBUTES,
@@ -63,6 +64,7 @@ import {
   isReservationRequestIvan,
   mergeSharedState,
   normalizeReservation,
+  normalizeReservationAttribute,
   setReservationRequestPlacement,
   setStaffMemberActive,
   setUserActive,
@@ -435,8 +437,8 @@ function migrateReservations(reservations, events) {
       deleted_at: reservation.deleted_at || null,
       is_deleted: Boolean(reservation.is_deleted),
       time_slot: migrateTimeSlot(reservation.time_slot),
-      attribute: RESERVATION_ATTRIBUTE,
-      ivan_attribute: IVAN_ATTRIBUTES.includes(reservation.ivan_attribute) ? reservation.ivan_attribute : IVAN_ATTRIBUTE,
+      attribute: normalizeReservationAttribute(reservation.attribute),
+      ivan_attribute: normalizeReservationAttribute(reservation.ivan_attribute, IVAN_ATTRIBUTE),
     };
     if (migrated.late_warning && !wasReservationChangedAfterEventCutoff(event, migrated)) {
       migrated.late_warning = false;
@@ -449,6 +451,8 @@ function migrateReservationRequests(requests) {
   return requests.map((request) => ({
     ...request,
     desired_time_slot: migrateTimeSlot(request.desired_time_slot),
+    attribute: normalizeReservationAttribute(request.attribute),
+    ivan_attribute: normalizeReservationAttribute(request.ivan_attribute, IVAN_ATTRIBUTE),
   }));
 }
 
@@ -1272,8 +1276,8 @@ function renderReservationRequestForm(eventId, setting, locked, editingRequest =
   const isEditing = Boolean(editingRequest);
   const personOptions = getReservationPersonOptions(editing.host_user_id);
   const desiredSlot = editing.desired_time_slot || allowedSlots[0];
-  const attribute = RESERVATION_ATTRIBUTE;
-  const ivanAttribute = IVAN_ATTRIBUTES.includes(editing.ivan_attribute) ? editing.ivan_attribute : IVAN_ATTRIBUTE;
+  const attribute = normalizeReservationAttribute(editing.attribute);
+  const ivanAttribute = normalizeReservationAttribute(editing.ivan_attribute, IVAN_ATTRIBUTE);
   return `
     <form class="reservation-request-form" data-action="save-reservation-request">
       ${isEditing ? `
@@ -2497,11 +2501,10 @@ function option(value, label, selected = false) {
 }
 
 function renderAttributeOptions(selectedValue, field = "attribute") {
-  if (field === "ivan_attribute") {
-    const selected = IVAN_ATTRIBUTES.includes(selectedValue) ? selectedValue : IVAN_ATTRIBUTE;
-    return IVAN_ATTRIBUTES.map((attribute) => option(attribute, attribute, attribute === selected)).join("");
-  }
-  return option(RESERVATION_ATTRIBUTE, RESERVATION_ATTRIBUTE, true);
+  const attributes = field === "ivan_attribute" ? IVAN_ATTRIBUTES : ATTRIBUTES;
+  const fallback = field === "ivan_attribute" ? IVAN_ATTRIBUTE : RESERVATION_ATTRIBUTE;
+  const selected = normalizeReservationAttribute(selectedValue, fallback);
+  return attributes.map((attribute) => option(attribute, attribute, attribute === selected)).join("");
 }
 
 function getReservationPersonOptions(selectedId = "") {
@@ -2529,10 +2532,10 @@ function syncReservationAttributeControls(container) {
   if (!personField) return;
   container.querySelectorAll("[data-role='reservation-attribute-select']").forEach((select) => {
     if (select.name === "ivan_attribute" || select.dataset.field === "ivan_attribute") {
-      select.value = IVAN_ATTRIBUTES.includes(select.value) ? select.value : IVAN_ATTRIBUTE;
+      select.value = normalizeReservationAttribute(select.value, IVAN_ATTRIBUTE);
       return;
     }
-    select.value = RESERVATION_ATTRIBUTE;
+    select.value = normalizeReservationAttribute(select.value);
   });
 }
 

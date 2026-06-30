@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 
 import {
   ATTENDANCE_STATUSES,
+  ATTRIBUTES,
   EVENT_STATUSES,
   IVAN_ATTRIBUTE,
   IVAN_ATTRIBUTES,
@@ -621,7 +622,7 @@ test('internal staff attendance is managed separately from host attendance', () 
   assert.equal(restResult.ok, false);
 });
 
-test('guest attributes are fixed, ivan attributes are limited, and internal staff cannot be assigned', () => {
+test('guest attributes are selectable for reservations and requests, and internal staff cannot be assigned', () => {
   let state = buildDefaultState(new Date(2026, 4, 15, 12));
   const event = activeEvent(state);
   const createdStaff = upsertStaffMember(
@@ -641,22 +642,22 @@ test('guest attributes are fixed, ivan attributes are limited, and internal staf
   const hostRequest = upsertReservationRequest(
     state,
     reservationRequestDraft(event.id, {
-      attribute: '初回',
-      ivan_attribute: 'リピ',
+      attribute: '初回指名あり',
+      ivan_attribute: 'リピート',
     }),
     { admin: true, now: '2026-05-03T13:00:00.000Z' },
   );
   assert.equal(hostRequest.ok, true);
-  assert.equal(hostRequest.request.attribute, RESERVATION_ATTRIBUTE);
-  assert.equal(hostRequest.request.ivan_attribute, 'リピ');
+  assert.equal(hostRequest.request.attribute, '初回指名あり');
+  assert.equal(hostRequest.request.ivan_attribute, 'リピート');
   state = hostRequest.state;
 
   const staffRequest = upsertReservationRequest(
     state,
     reservationRequestDraft(event.id, {
       host_user_id: createdStaff.staffMember.id,
-      attribute: 'リピ',
-      ivan_attribute: 'リピ',
+      attribute: 'リピート',
+      ivan_attribute: 'リピート',
     }),
     { admin: true, now: '2026-05-03T13:01:00.000Z' },
   );
@@ -666,22 +667,22 @@ test('guest attributes are fixed, ivan attributes are limited, and internal staf
   const hostReservation = upsertReservation(
     state,
     reservationDraft(event.id, {
-      attribute: '初回',
-      ivan_attribute: 'リピ',
+      attribute: 'リピート',
+      ivan_attribute: '初回指名あり',
     }),
     { admin: true, now: '2026-05-03T13:05:00.000Z' },
   );
   assert.equal(hostReservation.ok, true);
-  assert.equal(hostReservation.reservation.attribute, RESERVATION_ATTRIBUTE);
-  assert.equal(hostReservation.reservation.ivan_attribute, 'リピ');
+  assert.equal(hostReservation.reservation.attribute, 'リピート');
+  assert.equal(hostReservation.reservation.ivan_attribute, '初回指名あり');
 
   const staffReservation = upsertReservation(
     state,
     reservationDraft(event.id, {
       host_user_id: createdStaff.staffMember.id,
       group_no: '2',
-      attribute: 'リピ',
-      ivan_attribute: 'リピ',
+      attribute: 'リピート',
+      ivan_attribute: 'リピート',
     }),
     { admin: true, now: '2026-05-03T13:06:00.000Z' },
   );
@@ -715,7 +716,8 @@ test('reservation normalization validates slots, trims guest names, and detects 
   assert.equal(normalized.ivan_name, 'Bob');
   assert.equal(normalized.attribute, RESERVATION_ATTRIBUTE);
   assert.equal(normalized.ivan_attribute, IVAN_ATTRIBUTE);
-  assert.deepEqual(IVAN_ATTRIBUTES, ['リピ', '初回']);
+  assert.deepEqual(ATTRIBUTES, ['初回', '初回指名あり', 'リピート']);
+  assert.deepEqual(IVAN_ATTRIBUTES, ['初回', '初回指名あり', 'リピート']);
   assert.equal(isReservationFilled(normalized), true);
 
   const legacy = normalizeReservation({
@@ -724,9 +726,10 @@ test('reservation normalization validates slots, trims guest names, and detects 
     seat_type: SEAT_TYPES[1],
     group_no: 'A1',
     attribute: '初回指名',
+    ivan_attribute: 'リピ',
   });
-  assert.equal(legacy.attribute, RESERVATION_ATTRIBUTE);
-  assert.equal(legacy.ivan_attribute, IVAN_ATTRIBUTE);
+  assert.equal(legacy.attribute, '初回指名あり');
+  assert.equal(legacy.ivan_attribute, 'リピート');
 
   assert.equal(
     isReservationFilled(

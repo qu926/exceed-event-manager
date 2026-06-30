@@ -2,10 +2,10 @@ export const ROLES = ["幹部", "ホスト", "体入"];
 export const ATTENDANCE_STATUSES = ["出勤", "欠席", "未定", "体入"];
 export const STAFF_ATTENDANCE_STATUSES = ["出勤", "欠席", "未定"];
 export const EVENT_STATUSES = ["受付中", "終了", "休み"];
-export const ATTRIBUTES = ["初回", "リピ", "初回指名", "要確認"];
-export const RESERVATION_ATTRIBUTE = "リピ";
+export const ATTRIBUTES = ["初回", "初回指名あり", "リピート"];
+export const RESERVATION_ATTRIBUTE = "初回";
 export const IVAN_ATTRIBUTE = "初回";
-export const IVAN_ATTRIBUTES = ["リピ", "初回"];
+export const IVAN_ATTRIBUTES = ["初回", "初回指名あり", "リピート"];
 export const TIME_SLOTS = ["1タイム", "2タイム"];
 export const REQUEST_TIME_SLOT_LABELS = {
   [TIME_SLOTS[0]]: "1タイム希望",
@@ -54,6 +54,17 @@ const DEFAULT_CORE_OPTIONS = {
   initialUsers: DEFAULT_INITIAL_USERS,
   initialRoles: DEFAULT_INITIAL_ROLES,
 };
+
+const ATTRIBUTE_ALIASES = {
+  リピ: "リピート",
+  初回指名: "初回指名あり",
+};
+
+export function normalizeReservationAttribute(value, fallback = RESERVATION_ATTRIBUTE) {
+  const raw = String(value || "").trim();
+  const normalized = ATTRIBUTE_ALIASES[raw] || raw;
+  return ATTRIBUTES.includes(normalized) ? normalized : fallback;
+}
 
 let coreOptions = normalizeCoreOptions();
 
@@ -688,8 +699,8 @@ export function normalizeReservation(input) {
     host_user_id: input.host_user_id || "",
     princess_name: (input.princess_name || "").trim(),
     ivan_name: (input.ivan_name || "").trim(),
-    attribute: RESERVATION_ATTRIBUTE,
-    ivan_attribute: IVAN_ATTRIBUTES.includes(input.ivan_attribute) ? input.ivan_attribute : IVAN_ATTRIBUTE,
+    attribute: normalizeReservationAttribute(input.attribute),
+    ivan_attribute: normalizeReservationAttribute(input.ivan_attribute, IVAN_ATTRIBUTE),
     memo: input.memo || "",
   };
 }
@@ -956,9 +967,9 @@ export function normalizeReservationRequest(state, input) {
     desired_time_slot: desiredTimeSlot,
     no_same_time_double_booking: false,
     princess_name: (input.princess_name || "").trim(),
-    attribute: RESERVATION_ATTRIBUTE,
+    attribute: normalizeReservationAttribute(input.attribute),
     ivan_name: (input.ivan_name || "").trim(),
-    ivan_attribute: IVAN_ATTRIBUTES.includes(input.ivan_attribute) ? input.ivan_attribute : IVAN_ATTRIBUTE,
+    ivan_attribute: normalizeReservationAttribute(input.ivan_attribute, IVAN_ATTRIBUTE),
     memo: input.memo || "",
   };
 }
