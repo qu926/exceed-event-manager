@@ -502,8 +502,11 @@ function migrateEventDates(events, generatedEvents = [], deletedEventIds = []) {
 }
 
 function migrateTimeSlot(value) {
+  if (value === "1タイム") return TIME_SLOTS[0];
+  if (value === "2タイム") return TIME_SLOTS[1];
   if (value === "前半") return TIME_SLOTS[0];
   if (value === "後半") return TIME_SLOTS[1];
+  if (value === "オーラス") return TIME_SLOTS[2];
   return value;
 }
 
@@ -1234,8 +1237,8 @@ function renderReservationRequestPrototype(eventId, { adminMode = false, locked 
         <h3>予約受付方式（仮）</h3>
         <span class="capacity ${acceptance.closed ? "full" : "ok"}">合計 ${acceptance.total} / ${acceptance.capacity}</span>
       </div>
-      <p class="plan-note">担当者は席を選ばず、受付順に予約を登録します。運営があとから予約枠・保留枠へ振り分けます。担当はホストのみ選択できます。</p>
-      ${acceptance.closed ? `<div class="notice muted">受付上限 ${acceptance.capacity}件（予約枠${acceptance.reservationCapacity} + 保留枠${acceptance.holdCapacity}）に達しています。新規受付は締切です。</div>` : ""}
+      <p class="plan-note">担当者は席を選ばず、受付順に予約を登録します。希望回は「前半」「後半」「オーラス」から選択できます。担当はホストのみ選択できます。</p>
+      ${acceptance.closed ? `<div class="notice muted">1日の受付上限 ${acceptance.capacity}件に達しています。新規受付は締切です。</div>` : ""}
       ${adminMode ? renderReservationRequestSettingForm(eventId, setting) : ""}
       ${renderReservationRequestForm(eventId, setting, requestLocked, editingRequest)}
       ${renderReservationRequestSummaryV2(buckets, setting, acceptance)}
@@ -1250,18 +1253,14 @@ function renderReservationRequestSettingForm(eventId, setting) {
     <form class="request-setting-form" data-action="save-reservation-request-setting">
       <input type="hidden" name="event_date_id" value="${escapeAttr(eventId)}">
       <div class="request-setting-copy">
-        <strong>運営用: 席数設定</strong>
-        <span>1インスタンス営業として、各タイムの通常席数とアイバン席数を設定します。</span>
+        <strong>運営用: 1日の受付上限</strong>
+        <span>この日全体で受け付ける予約数を設定します。前半・後半・オーラスの内訳では締めません。</span>
       </div>
       <div class="request-setting-controls">
         <div class="request-setting-capacities">
           <label>
-            <span>通常席数</span>
-            <input name="normal_capacity" type="number" min="0" max="99" step="1" value="${setting.normal_capacity}">
-          </label>
-          <label>
-            <span>アイバン席数</span>
-            <input name="ivan_capacity" type="number" min="0" max="99" step="1" value="${setting.ivan_capacity}">
+            <span>1日の受付上限</span>
+            <input name="daily_capacity" type="number" min="0" max="99" step="1" value="${setting.daily_capacity}">
           </label>
         </div>
         <button class="primary-button" type="submit">設定を反映</button>
@@ -1313,23 +1312,22 @@ function renderReservationRequestSummaryV2(buckets, setting, acceptance) {
       <div class="mini-panel">
         <span>受付合計</span>
         <strong>${acceptance.total} / ${acceptance.capacity}</strong>
-        <em>予約枠${acceptance.reservationCapacity} + 保留${acceptance.holdCapacity}</em>
+        <em>1日の受付上限</em>
         <span class="capacity ${acceptance.closed ? "full" : "ok"}">${acceptance.closed ? "締切" : "受付中"}</span>
       </div>
       <div class="mini-panel">
-        <span>保留枠合計</span>
-        <strong>${acceptance.holdUsed} / ${acceptance.holdCapacity}</strong>
-        <em>${TIME_SLOTS.map((slot) => `${slot}3`).join(" / ")}</em>
-        <span class="capacity ${acceptance.holdUsed >= acceptance.holdCapacity ? "full" : "ok"}">${acceptance.holdUsed >= acceptance.holdCapacity ? "満枠" : `残り${acceptance.holdCapacity - acceptance.holdUsed}`}</span>
+        <span>残り受付数</span>
+        <strong>${acceptance.remaining}</strong>
+        <em>日別総数で管理</em>
+        <span class="capacity ${acceptance.remaining <= 0 ? "full" : "ok"}">${acceptance.remaining <= 0 ? "満枠" : `残り${acceptance.remaining}`}</span>
       </div>
       ${TIME_SLOTS.map((slot) => {
         const bucket = buckets[slot];
-        return [
-          renderRequestCapacityPanel(`${slot} 通常席`, bucket.normal),
-          renderRequestCapacityPanel(`${slot} アイバン枠`, bucket.ivan),
-        ].join("");
+        const normalCount = bucket.normal.reserved.length + bucket.normal.hold.length;
+        const ivanCount = bucket.ivan.reserved.length + bucket.ivan.hold.length;
+        const totalCount = normalCount + ivanCount;
+        return `<div class="mini-panel"><span>${escapeHtml(slot)}</span><strong>${totalCount}件</strong><em>通常 ${normalCount} / アイバン ${ivanCount}</em><span class="capacity ok">受付中</span></div>`;
       }).join("")}
-      ${TIME_SLOTS.map((slot) => renderRequestHoldCapacityPanel(slot, acceptance)).join("")}
     </div>
   `;
 }
@@ -1365,7 +1363,7 @@ function renderRequestSeatBucket(label, bucket, adminMode) {
     <section class="request-bucket">
       <div class="section-title">
         <h3>${escapeHtml(label)}</h3>
-        <span class="capacity ${bucket.reserved.length > bucket.capacity ? "over" : "ok"}">${bucket.reserved.length} / ${bucket.capacity}</span>
+        <span class="capacity ok">${bucket.reserved.length}件</span>
       </div>
       ${renderRequestCardsV2(bucket.reserved, adminMode, "予約枠はまだありません。")}
       <h4>保留枠</h4>
@@ -3248,6 +3246,7 @@ function summarizePayload(payload) {
     "group_no",
     "host_user_id",
     "desired_time_slot",
+    "daily_capacity",
     "normal_capacity",
     "ivan_capacity",
     "placement_status",

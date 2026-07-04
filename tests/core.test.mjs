@@ -367,8 +367,10 @@ test('finished events are automatically archived and reservation sections prefer
   assert.ok(getActiveEvents(archived.state, new Date('2026-05-09T00:00:00+09:00')).some((event) => event.id === futureEvent.id));
 
   assert.deepEqual(RESERVATION_SEAT_ORDER, [SEAT_TYPES[1], SEAT_TYPES[0]]);
-  assert.equal(TIME_SLOT_LABELS[TIME_SLOTS[0]], '1タイム 22:00~');
-  assert.equal(TIME_SLOT_LABELS[TIME_SLOTS[1]], '2タイム 23:00~');
+  assert.deepEqual(TIME_SLOTS, ['前半', '後半', 'オーラス']);
+  assert.equal(TIME_SLOT_LABELS[TIME_SLOTS[0]], '前半');
+  assert.equal(TIME_SLOT_LABELS[TIME_SLOTS[1]], '後半');
+  assert.equal(TIME_SLOT_LABELS[TIME_SLOTS[2]], 'オーラス');
 });
 
 test('attendance upsert is immutable and summary tracks missing, present, absent, undecided, and vacation users', () => {
@@ -790,12 +792,13 @@ test('reservation save conflicts protect occupied slots and stale edits', () => 
   assert.equal(getReservationSaveConflict(deleted.state, occupiedConflict.reservation), null);
 });
 
-test('reservation request prototype supports seat capacities, host limits, and manual holds', () => {
+test('reservation request prototype supports daily capacity, host limits, and manual holds', () => {
   let state = buildDefaultState(new Date(2026, 4, 15, 12));
   const event = activeEvent(state);
   let hosts = ensureActiveHosts(state, 30);
 
   assert.equal(getReservationSetting(state, event.id).instance_count, 1);
+  assert.equal(getReservationSetting(state, event.id).daily_capacity, 26);
   assert.equal(getReservationSetting(state, event.id).ivan_capacity, 2);
   assert.equal(getReservationRequestNormalCapacity(state, event.id, TIME_SLOTS[0]), 8);
   assert.equal(getReservationRequestIvanCapacity(state, event.id, TIME_SLOTS[0]), 2);
@@ -823,7 +826,7 @@ test('reservation request prototype supports seat capacities, host limits, and m
     { admin: true, now: '2026-05-03T13:01:00.000Z' },
   );
   assert.equal(duplicateSameHostSlot.ok, false);
-  assert.equal(duplicateSameHostSlot.errors.includes('同じ担当は1タイム1枠、2タイム1枠までです。'), true);
+  assert.equal(duplicateSameHostSlot.errors.includes('同じ担当は同じ希望回に1枠までです。'), true);
 
   state = buildDefaultState(new Date(2026, 4, 15, 12));
   hosts = ensureActiveHosts(state, 30);
@@ -841,8 +844,8 @@ test('reservation request prototype supports seat capacities, host limits, and m
   }
 
   let buckets = getReservationRequestBuckets(state, event.id);
-  assert.equal(buckets[TIME_SLOTS[0]].normal.reserved.length, 8);
-  assert.equal(buckets[TIME_SLOTS[0]].normal.hold.length, 1);
+  assert.equal(buckets[TIME_SLOTS[0]].normal.reserved.length, 9);
+  assert.equal(buckets[TIME_SLOTS[0]].normal.hold.length, 0);
 
   const first = buckets[TIME_SLOTS[0]].normal.reserved[0];
   const held = setReservationRequestPlacement(state, first.id, 'hold', '2026-05-03T13:20:00.000Z');
@@ -864,6 +867,7 @@ test('reservation request prototype supports seat capacities, host limits, and m
   assert.equal(getReservationSetting(state, event.id).normal_capacity_front, 18);
   assert.equal(getReservationSetting(state, event.id).normal_capacity_back, 18);
   assert.equal(getReservationSetting(state, event.id).ivan_capacity, 3);
+  assert.equal(getReservationSetting(state, event.id).daily_capacity, 48);
   assert.equal(getReservationRequestNormalCapacity(state, event.id, TIME_SLOTS[0]), 18);
   assert.equal(getReservationRequestNormalCapacity(state, event.id, TIME_SLOTS[1]), 18);
   assert.equal(getReservationRequestIvanCapacity(state, event.id, TIME_SLOTS[1]), 3);
@@ -880,6 +884,16 @@ test('reservation request prototype supports seat capacities, host limits, and m
   assert.equal(getReservationRequestNormalCapacity(state, event.id, TIME_SLOTS[0]), 18);
   assert.equal(getReservationRequestNormalCapacity(state, event.id, TIME_SLOTS[1]), 18);
   assert.equal(getReservationSetting(state, event.id).ivan_capacity, 4);
+  assert.equal(getReservationSetting(state, event.id).daily_capacity, 50);
+
+  const dailySetting = upsertReservationSetting(
+    state,
+    { event_date_id: event.id, daily_capacity: 12 },
+    '2026-05-03T13:30:45.000Z',
+  );
+  assert.equal(dailySetting.ok, true);
+  state = dailySetting.state;
+  assert.equal(getReservationSetting(state, event.id).daily_capacity, 12);
 
   const thirdIvan = upsertReservationRequest(
     state,
@@ -893,13 +907,13 @@ test('reservation request prototype supports seat capacities, host limits, and m
   assert.equal(thirdIvan.ok, true);
 });
 
-test('reservation request acceptance enforces three hold slots per time slot for hosts', () => {
+test('reservation request acceptance enforces daily total capacity for hosts', () => {
   let state = buildDefaultState(new Date(2026, 4, 15, 12));
   const event = activeEvent(state);
   const hosts = ensureActiveHosts(state, 30);
   const setting = upsertReservationSetting(
     state,
-    { event_date_id: event.id, normal_capacity: 16, ivan_capacity: 4 },
+    { event_date_id: event.id, daily_capacity: 43 },
     '2026-05-03T12:00:00.000Z',
   );
   assert.equal(setting.ok, true);
@@ -942,20 +956,22 @@ test('reservation request acceptance enforces three hold slots per time slot for
 
   assert.deepEqual(getReservationRequestAcceptanceStatus(state, event.id), {
     total: 43,
-    reservationCapacity: 40,
-    holdCapacity: 6,
+    reservationCapacity: 43,
+    holdCapacity: 0,
     holdCapacityByTimeSlot: {
-      [TIME_SLOTS[0]]: 3,
-      [TIME_SLOTS[1]]: 3,
-    },
-    holdUsed: 3,
-    holdUsedByTimeSlot: {
-      [TIME_SLOTS[0]]: 3,
+      [TIME_SLOTS[0]]: 0,
       [TIME_SLOTS[1]]: 0,
+      [TIME_SLOTS[2]]: 0,
     },
-    capacity: 46,
-    remaining: 3,
-    closed: false,
+    holdUsed: 0,
+    holdUsedByTimeSlot: {
+      [TIME_SLOTS[0]]: 0,
+      [TIME_SLOTS[1]]: 0,
+      [TIME_SLOTS[2]]: 0,
+    },
+    capacity: 43,
+    remaining: 0,
+    closed: true,
   });
 
   const frontHostAttempt = upsertReservationRequest(
@@ -964,14 +980,15 @@ test('reservation request acceptance enforces three hold slots per time slot for
     { admin: false, now: event.reservation_open_at },
   );
   assert.equal(frontHostAttempt.ok, false);
-  assert.equal(frontHostAttempt.errors.some((error) => error.includes('保留枠が上限に達しています')), true);
+  assert.equal(frontHostAttempt.errors.some((error) => error.includes('受付上限')), true);
 
   const backHostAttempt = upsertReservationRequest(
     state,
     reservationRequestDraft(event.id, { host_user_id: hosts[25].id, desired_time_slot: TIME_SLOTS[1], princess_name: 'Back hold allowed' }),
     { admin: false, now: event.reservation_open_at },
   );
-  assert.equal(backHostAttempt.ok, true);
+  assert.equal(backHostAttempt.ok, false);
+  assert.equal(backHostAttempt.errors.some((error) => error.includes('受付上限')), true);
 
   const adminAttempt = upsertReservationRequest(
     state,
