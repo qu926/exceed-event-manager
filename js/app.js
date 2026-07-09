@@ -142,6 +142,8 @@ setActiveStoreConfig(getInitialStoreKey());
 const root = document.querySelector("#app");
 const toastRoot = document.querySelector("#toast");
 const HOST_ATTENDANCE_LIST_STATUSES = ["出勤", "欠席", "未定", "体入", "未入力", "長期休暇"];
+const HOST_ATTENDANCE_INPUT_STATUSES = ATTENDANCE_STATUSES.filter((status) => status !== "未定");
+const STAFF_ATTENDANCE_INPUT_STATUSES = STAFF_ATTENDANCE_STATUSES.filter((status) => status !== "未定");
 const VIEW_PAGES = new Set(["attendance", "staffAttendance", "attendanceList", "reservation", "admin"]);
 const ADMIN_TABS = new Set([
   "dashboard",
@@ -993,7 +995,7 @@ function renderBulkAttendanceRow(event) {
         <span>予約は常時受付</span>
       </div>
       <div class="bulk-status-options" role="radiogroup" aria-label="${formatDateLabel(event.event_date)} の出欠">
-        ${ATTENDANCE_STATUSES.map((status) => `
+        ${HOST_ATTENDANCE_INPUT_STATUSES.map((status) => `
           <label class="bulk-status-option status-${status}">
             <input name="status_${event.id}" type="radio" value="${status}" ${entry?.status === status ? "checked" : ""}>
             <span>${bulkAttendanceLabel(status)}</span>
@@ -1081,7 +1083,7 @@ function renderBulkStaffAttendanceRow(event) {
         <span>予約は常時受付</span>
       </div>
       <div class="bulk-status-options is-staff" role="radiogroup" aria-label="${formatDateLabel(event.event_date)} の内勤出勤">
-        ${STAFF_ATTENDANCE_STATUSES.map((status) => `
+        ${STAFF_ATTENDANCE_INPUT_STATUSES.map((status) => `
           <label class="bulk-status-option status-${status}">
             <input name="status_${event.id}" type="radio" value="${status}" ${entry?.status === status ? "checked" : ""}>
             <span>${bulkAttendanceLabel(status)}</span>
@@ -1662,7 +1664,7 @@ function renderAdminAttendance() {
         <td>${escapeHtml(user.role)}${vacation ? `<span class="inline-pill muted">長期休暇</span>` : ""}</td>
         <td>
           <select data-field="status">
-            ${ATTENDANCE_STATUSES.map((status) => option(status, status, status === (entry?.status || "出勤"))).join("")}
+            ${HOST_ATTENDANCE_INPUT_STATUSES.map((status) => option(status, status, status === (entry?.status || "出勤"))).join("")}
           </select>
         </td>
         <td><input data-field="memo" value="${escapeAttr(entry?.memo || "")}"></td>
@@ -1696,7 +1698,7 @@ function renderAdminStaffAttendance() {
         <td>${escapeHtml(member.staff_type || "内勤")}</td>
         <td>
           <select data-field="status">
-            ${STAFF_ATTENDANCE_STATUSES.map((status) => option(status, status, status === (entry?.status || "出勤"))).join("")}
+            ${STAFF_ATTENDANCE_INPUT_STATUSES.map((status) => option(status, status, status === (entry?.status || "出勤"))).join("")}
           </select>
         </td>
         <td><input data-field="memo" value="${escapeAttr(entry?.memo || "")}"></td>
