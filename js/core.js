@@ -559,6 +559,23 @@ export function getMissingStaffMembers(state, eventId) {
   return getActiveStaffMembers(state).filter((member) => !getStaffAttendanceEntry(state, eventId, member.id));
 }
 
+export function getUndecidedUsers(state, eventId) {
+  const event = findEvent(state, eventId);
+  if (!event || event.status === "休み") return [];
+  return getActiveUsers(state).filter((user) => {
+    if (isOnVacation(state, user.id, event.event_date)) return false;
+    return getAttendanceEntry(state, eventId, user.id)?.status === "未定";
+  });
+}
+
+export function getUndecidedStaffMembers(state, eventId) {
+  const event = findEvent(state, eventId);
+  if (!event || event.status === "休み") return [];
+  return getActiveStaffMembers(state).filter((member) => {
+    return getStaffAttendanceEntry(state, eventId, member.id)?.status === "未定";
+  });
+}
+
 export function getStaffAttendanceSummary(state, eventId) {
   const event = findEvent(state, eventId);
   const summary = { 出勤: 0, 欠席: 0, 未定: 0, 未入力: 0 };
@@ -1434,8 +1451,15 @@ export function generateAttendanceDiscordText(state, eventId) {
   const event = findEvent(state, eventId);
   if (!event) return "";
   const missing = getMissingUsers(state, eventId);
-  const names = missing.length ? missing.map((user) => `・${user.display_name}`).join("\n") : "・なし";
-  return `【${formatDateLabel(event.event_date)} 勤怠入力のお願い】\n\n未入力の方\n${names}\n\n勤怠入力をお願いします。\n変更がある場合は、サイトから修正してください。`;
+  const missingStaff = getMissingStaffMembers(state, eventId);
+  const undecided = getUndecidedUsers(state, eventId);
+  const undecidedStaff = getUndecidedStaffMembers(state, eventId);
+  return `【${formatDateLabel(event.event_date)} 勤怠入力のお願い】\n\n未入力の方\n${formatDiscordNameGroup("ホスト", missing)}\n${formatDiscordNameGroup("内勤", missingStaff)}\n\n未定の方\n${formatDiscordNameGroup("ホスト", undecided)}\n${formatDiscordNameGroup("内勤", undecidedStaff)}\n\n勤怠入力をお願いします。\n変更がある場合は、サイトから修正してください。`;
+}
+
+function formatDiscordNameGroup(label, people) {
+  const names = people.length ? people.map((person) => `・${person.display_name}`).join("\n") : "・なし";
+  return `■ ${label}\n${names}`;
 }
 
 export function generateReservationDiscordText(state, eventId) {

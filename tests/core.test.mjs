@@ -20,6 +20,7 @@ import {
   deleteReservation,
   deleteRole,
   findReservationBySlot,
+  generateAttendanceDiscordText,
   getActiveStaffMembers,
   getActiveUsers,
   getAttendanceEntriesForEvent,
@@ -622,6 +623,93 @@ test('internal staff attendance is managed separately from host attendance', () 
     new Date('2026-05-02T11:00:00+09:00'),
   );
   assert.equal(restResult.ok, false);
+});
+
+test('attendance discord text includes missing and undecided hosts and staff', () => {
+  let state = buildDefaultState(new Date(2026, 4, 15, 12));
+  const event = activeEvent(state);
+  const activeUsers = getActiveUsers(state);
+  const presentHost = activeUsers[0];
+  const undecidedHost = activeUsers[1];
+  const missingHost = activeUsers[2];
+
+  const present = upsertAttendance(
+    state,
+    {
+      event_date_id: event.id,
+      user_id: presentHost.id,
+      status: ATTENDANCE_STATUSES[0],
+      memo: '',
+    },
+    new Date('2026-05-02T10:00:00+09:00'),
+  );
+  assert.equal(present.ok, true);
+  state = present.state;
+
+  const undecided = upsertAttendance(
+    state,
+    {
+      event_date_id: event.id,
+      user_id: undecidedHost.id,
+      status: ATTENDANCE_STATUSES[2],
+      memo: '',
+    },
+    new Date('2026-05-02T10:01:00+09:00'),
+  );
+  assert.equal(undecided.ok, true);
+  state = undecided.state;
+
+  const missingStaff = upsertStaffMember(
+    state,
+    {
+      display_name: '内勤未入力',
+      kana: 'ないきんみにゅうりょく',
+      staff_type: '内勤',
+      is_active: true,
+      note: '',
+    },
+    new Date('2026-05-02T10:02:00+09:00'),
+  );
+  assert.equal(missingStaff.ok, true);
+  state = missingStaff.state;
+
+  const undecidedStaff = upsertStaffMember(
+    state,
+    {
+      display_name: '内勤未定',
+      kana: 'ないきんみてい',
+      staff_type: '内勤',
+      is_active: true,
+      note: '',
+    },
+    new Date('2026-05-02T10:03:00+09:00'),
+  );
+  assert.equal(undecidedStaff.ok, true);
+  state = undecidedStaff.state;
+
+  const staffAttendance = upsertStaffAttendance(
+    state,
+    {
+      event_date_id: event.id,
+      staff_member_id: undecidedStaff.staffMember.id,
+      status: STAFF_ATTENDANCE_STATUSES[2],
+      memo: '',
+    },
+    new Date('2026-05-02T10:04:00+09:00'),
+  );
+  assert.equal(staffAttendance.ok, true);
+  state = staffAttendance.state;
+
+  const text = generateAttendanceDiscordText(state, event.id);
+  assert.ok(text.includes('未入力の方'));
+  assert.ok(text.includes('未定の方'));
+  assert.ok(text.includes('■ ホスト'));
+  assert.ok(text.includes('■ 内勤'));
+  assert.ok(text.includes(`・${missingHost.display_name}`));
+  assert.ok(text.includes('・内勤未入力'));
+  assert.ok(text.includes(`・${undecidedHost.display_name}`));
+  assert.ok(text.includes('・内勤未定'));
+  assert.equal(text.includes(`・${presentHost.display_name}`), false);
 });
 
 test('guest attributes are selectable for reservations and requests, and internal staff cannot be assigned', () => {
